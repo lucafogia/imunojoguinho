@@ -51,7 +51,7 @@ const UNITS={
   NEUTRO:{name:'Neutrófilo',cost:10,r:10,hp:60,spd:2.5,dmg:8,range:20,atkSpd:30,
     col:'#4488DD',dk:'#2266AA',lt:'#88BBFF',
     tooltip:'Primeiro a chegar! Rápido e agressivo, libera NETs ao morrer.',shortDesc:'Melee rápido'},
-  MACRO:{name:'Macrófago',cost:20,r:16,hp:150,spd:1.5,dmg:12,range:24,atkSpd:40,
+  MACRO:{name:'Macrófago',cost:20,r:16,hp:110,spd:1.5,dmg:12,range:24,atkSpd:40,
     col:'#9955CC',dk:'#7744AA',lt:'#CC99EE',
     tooltip:'Tanque pesado. Fagocita inimigos e se cura ao matar.',shortDesc:'Tanque melee'},
   EOSINO:{name:'Eosinófilo',cost:25,r:12,hp:80,spd:2.0,dmg:6,range:40,atkSpd:35,
@@ -70,16 +70,16 @@ const UNITS={
 };
 
 const ENEMIES={
-  BACTERIA:{name:'Bactéria',r:8,hp:30,spd:0.8,baseDmg:5,contactDmg:2,col:'#55CC55',dk:'#338833'},
-  BIOFILME:{name:'Biofilme',r:25,hp:200,spd:0,spawnRate:200,col:'#337733',dk:'#224422',
+  BACTERIA:{name:'Bactéria',r:8,hp:35,spd:1.0,baseDmg:8,contactDmg:3,col:'#55CC55',dk:'#338833'},
+  BIOFILME:{name:'Biofilme',r:25,hp:220,spd:0,spawnRate:140,col:'#337733',dk:'#224422',
     tooltip:'Biofilmes são comunidades bacterianas protegidas por matriz extracelular.'},
   HELMINTO:{name:'Ascaris',r:20,hp:500,spd:0.3,baseDmg:15,col:'#DDBB88',dk:'#AA8855',
     tooltip:'Helmintos são grandes demais para fagocitose. Eosinófilos são a defesa principal!'},
-  ENTAMOEBA:{name:'Entamoeba',r:14,hp:120,spd:0.6,baseDmg:10,col:'#BB8855',dk:'#886633',
+  ENTAMOEBA:{name:'Entamoeba',r:14,hp:140,spd:0.7,baseDmg:12,col:'#BB8855',dk:'#886633',
     tooltip:'Entamoeba histolytica causa amebíase. Devora células com HP baixo!'},
-  TUMOR:{name:'Tumor',r:18,hp:400,spd:0,spawnRate:240,pdl1:true,col:'#8866AA',dk:'#554477',
+  TUMOR:{name:'Tumor',r:18,hp:450,spd:0,spawnRate:180,pdl1:true,col:'#8866AA',dk:'#554477',
     tooltip:'Expressa PD-L1 para escapar do sistema imune. Use NK e anti-PD-L1!'},
-  METASTASE:{name:'Metástase',r:10,hp:60,spd:0.6,baseDmg:8,pdl1:true,col:'#9977BB',dk:'#665588'},
+  METASTASE:{name:'Metástase',r:10,hp:70,spd:0.7,baseDmg:10,pdl1:true,col:'#9977BB',dk:'#665588'},
 };
 
 const CYTOKINES={
@@ -95,41 +95,47 @@ const LEVELS=[
   {name:'Invasão Bacteriana',scene:'conjuntivo',
    desc:'Bactérias invadem o tecido! Use neutrófilos e macrófagos para defender.',
    available:['NEUTRO','MACRO'],cytokinesAvailable:[],
-   atp:50,regen:0.5,
-   waves:[{time:60,enemies:[{type:'BACTERIA',count:5}]},{time:360,enemies:[{type:'BACTERIA',count:6}]},
-     {time:720,enemies:[{type:'BACTERIA',count:7}]},{time:1080,enemies:[{type:'BACTERIA',count:6}]}],
+   atp:25,regen:0.13,
+   waves:[{time:60,enemies:[{type:'BACTERIA',count:5}]},{time:240,enemies:[{type:'BACTERIA',count:6}]},
+     {time:450,enemies:[{type:'BACTERIA',count:8}]},{time:700,enemies:[{type:'BACTERIA',count:7}]},
+     {time:950,enemies:[{type:'BACTERIA',count:9}]}],
    staticEnemies:[]},
   {name:'Biofilme',scene:'conjuntivo',
    desc:'Um biofilme produz bactérias sem parar. Destrua a fonte!',
    available:['NEUTRO','MACRO','EOSINO'],cytokinesAvailable:['IL2'],
-   atp:60,regen:0.55,
-   waves:[{time:60,enemies:[{type:'BACTERIA',count:6}]},{time:480,enemies:[{type:'BACTERIA',count:5}]}],
+   atp:30,regen:0.14,
+   waves:[{time:60,enemies:[{type:'BACTERIA',count:6}]},{time:300,enemies:[{type:'BACTERIA',count:7}]},
+     {time:540,enemies:[{type:'BACTERIA',count:8}]},{time:800,enemies:[{type:'BACTERIA',count:6}]}],
    staticEnemies:[{type:'BIOFILME',x:620,y:180}]},
   {name:'Helminto',scene:'intestino',
    desc:'Um Ascaris gigante invade o intestino! Eosinófilos são essenciais.',
    available:['NEUTRO','MACRO','EOSINO','LINFOB'],cytokinesAvailable:['IL2','IFNG'],
-   atp:80,regen:0.65,
-   waves:[{time:60,enemies:[{type:'BACTERIA',count:4}]},{time:420,enemies:[{type:'BACTERIA',count:5}]},
-     {time:780,enemies:[{type:'BACTERIA',count:5}]},{time:1100,enemies:[{type:'BACTERIA',count:4}]}],
+   atp:40,regen:0.16,
+   waves:[{time:60,enemies:[{type:'BACTERIA',count:5}]},{time:300,enemies:[{type:'BACTERIA',count:6}]},
+     {time:540,enemies:[{type:'BACTERIA',count:7}]},{time:800,enemies:[{type:'BACTERIA',count:6}]},
+     {time:1050,enemies:[{type:'BACTERIA',count:8}]}],
    staticEnemies:[{type:'HELMINTO',x:720,y:170},{type:'BIOFILME',x:640,y:300}]},
   {name:'Amebíase',scene:'intestino',
    desc:'Entamoeba histolytica invade a mucosa! Cuidado, ela devora suas células!',
    available:['NEUTRO','MACRO','EOSINO','LINFOB'],cytokinesAvailable:['IL2','IFNG'],
-   atp:70,regen:0.6,
-   waves:[{time:60,enemies:[{type:'BACTERIA',count:5,hp:40,spd:1.0}]},
-     {time:300,enemies:[{type:'ENTAMOEBA',count:1}]},
-     {time:480,enemies:[{type:'BACTERIA',count:6,hp:40,spd:1.0}]},
-     {time:720,enemies:[{type:'ENTAMOEBA',count:1},{type:'BACTERIA',count:4,hp:40}]},
-     {time:1000,enemies:[{type:'BACTERIA',count:5,hp:40}]}],
+   atp:35,regen:0.15,
+   waves:[{time:60,enemies:[{type:'BACTERIA',count:6,hp:45,spd:1.1}]},
+     {time:240,enemies:[{type:'ENTAMOEBA',count:1},{type:'BACTERIA',count:3,hp:45,spd:1.1}]},
+     {time:420,enemies:[{type:'BACTERIA',count:8,hp:45,spd:1.1}]},
+     {time:600,enemies:[{type:'ENTAMOEBA',count:2},{type:'BACTERIA',count:4,hp:45}]},
+     {time:840,enemies:[{type:'BACTERIA',count:7,hp:45}]},
+     {time:1050,enemies:[{type:'ENTAMOEBA',count:1},{type:'BACTERIA',count:5,hp:45}]}],
    staticEnemies:[{type:'BIOFILME',x:650,y:200}]},
   {name:'Tumor',scene:'pulmao',
    desc:'Um tumor expressa PD-L1 e libera metástases! Use NK e imunoterapia!',
    available:['NEUTRO','MACRO','EOSINO','LINFOB','TCITO','NK'],cytokinesAvailable:['IL2','IFNG','ANTIPDL1'],
-   atp:100,regen:0.7,
-   waves:[{time:60,enemies:[{type:'BACTERIA',count:4,hp:50,spd:1.0}]},
-     {time:480,enemies:[{type:'BACTERIA',count:5,hp:50,spd:1.0}]},
-     {time:900,enemies:[{type:'ENTAMOEBA',count:1},{type:'BACTERIA',count:4,hp:50}]},
-     {time:1300,enemies:[{type:'BACTERIA',count:5,hp:50}]}],
+   atp:50,regen:0.18,
+   waves:[{time:60,enemies:[{type:'BACTERIA',count:5,hp:55,spd:1.2}]},
+     {time:300,enemies:[{type:'BACTERIA',count:6,hp:55,spd:1.2}]},
+     {time:540,enemies:[{type:'ENTAMOEBA',count:1},{type:'BACTERIA',count:5,hp:55}]},
+     {time:780,enemies:[{type:'BACTERIA',count:8,hp:55,spd:1.2}]},
+     {time:1020,enemies:[{type:'ENTAMOEBA',count:1},{type:'BACTERIA',count:6,hp:55}]},
+     {time:1300,enemies:[{type:'BACTERIA',count:7,hp:55}]}],
    staticEnemies:[{type:'TUMOR',x:700,y:185}]},
 ];
 
@@ -162,7 +168,7 @@ const FACTS=[
 
 // --- GAME STATE ---
 let state='menu',level=0,frame=0;
-let atp=50,atpRegen=0.5;
+let atp=25,atpRegen=0.13;
 let allies=[],enemies_=[],projectiles=[],effects=[],nets=[];
 let selectedUnit=null,tissueHP=100,waveIndex=0;
 let totalEnemyCount=0,killedEnemyCount=0;
@@ -398,7 +404,7 @@ function updateEnemies(){
       // Devour weak allies
       for(let ai=allies.length-1;ai>=0;ai--){
         const a=allies[ai];
-        if(dist(e.x,e.y,a.x,a.y)<e.r+a.r && a.hp<40){
+        if(dist(e.x,e.y,a.x,a.y)<e.r+a.r && a.hp<55){
           addText(a.x,a.y-10,'DEVORADO!','#FF8844',12);addP(a.x,a.y,'#BB8855',10,4);
           effects.push({type:'death',x:a.x,y:a.y,life:20,col:'#BB8855'});
           allies.splice(ai,1);e.hp=Math.min(e.maxHp,e.hp+15);sndHurt();
@@ -407,8 +413,8 @@ function updateEnemies(){
       if(e.x<=BASE_X){tissueHP-=ENEMIES.ENTAMOEBA.baseDmg*1.5;addP(e.x,e.y,'#FF4444',10,5);addText(e.x,e.y-10,'-15 Tecido','#FF4444',12);shakeTime=12;sndHurt();enemies_.splice(i,1);continue;}
     } else if(e.type==='TUMOR'){
       // Tumor mutation at 50% HP
-      if(!e.mutated && e.hp<=e.maxHp*0.5){e.mutated=true;e.spawnRate=160;addText(e.x,e.y-e.r-15,'MUTAÇÃO!','#FF44FF',14);addP(e.x,e.y,'#AA44CC',15,5);}
-      const rate=e.mutated?160:ENEMIES.TUMOR.spawnRate;
+      if(!e.mutated && e.hp<=e.maxHp*0.5){e.mutated=true;e.spawnRate=100;addText(e.x,e.y-e.r-15,'MUTAÇÃO!','#FF44FF',14);addP(e.x,e.y,'#AA44CC',15,5);}
+      const rate=e.mutated?100:ENEMIES.TUMOR.spawnRate;
       e.spawnTimer++;
       if(e.spawnTimer>=rate){e.spawnTimer=0;
         const ang=-Math.PI*0.5+Math.random()*Math.PI;
