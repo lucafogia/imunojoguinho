@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Imunojoguinho — Jogos do Sistema Imunológico</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box;}
+    html,body{width:100%;height:100%;overflow:hidden;background:#0D0515;
+      font-family:'Segoe UI',Arial,Helvetica,sans-serif;
+      touch-action:none;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none;}
+    canvas{display:block;width:100%;height:100%;position:absolute;top:0;left:0;z-index:0;}
+    .hub{position:relative;z-index:1;width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;overflow-y:auto;}
+    .title-area{text-align:center;margin-bottom:8px;pointer-events:none;}
+    .title{font-size:clamp(24px,5vw,42px);font-weight:800;background:linear-gradient(90deg,#FF8888,#FFCC77,#88BBFF);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;text-shadow:none;letter-spacing:-0.5px;line-height:1.2;}
+    .subtitle{font-size:clamp(10px,2vw,14px);color:rgba(255,220,200,0.6);margin-top:4px;}
+    .cards{display:flex;gap:clamp(8px,2vw,18px);flex-wrap:wrap;justify-content:center;padding:0 12px;max-width:900px;}
+    .card{width:clamp(200px,28vw,260px);background:rgba(35,25,55,0.85);border:1.5px solid rgba(150,130,200,0.25);border-radius:14px;padding:clamp(12px,2vw,20px);cursor:pointer;transition:transform 0.18s,border-color 0.25s,box-shadow 0.25s;text-decoration:none;display:flex;flex-direction:column;align-items:center;position:relative;overflow:hidden;}
+    .card:hover,.card:active{transform:translateY(-4px) scale(1.02);border-color:rgba(200,180,255,0.5);box-shadow:0 8px 30px rgba(120,80,200,0.2);}
+    .card-stripe{position:absolute;top:0;left:0;right:0;height:4px;border-radius:14px 14px 0 0;opacity:0.7;}
+    .card-icon{width:64px;height:64px;border-radius:50%;margin:8px 0 10px;display:flex;align-items:center;justify-content:center;font-size:28px;border:2px solid rgba(255,255,255,0.1);position:relative;overflow:hidden;}
+    .card-icon canvas{width:100%;height:100%;border-radius:50%;}
+    .card-title{font-size:clamp(14px,2.2vw,17px);font-weight:700;color:#EEDDFF;margin-bottom:4px;text-align:center;}
+    .card-desc{font-size:clamp(9px,1.5vw,11px);color:rgba(200,200,220,0.6);text-align:center;line-height:1.4;}
+    .card-tag{display:inline-block;font-size:9px;font-weight:600;padding:2px 8px;border-radius:8px;margin-top:8px;color:#FFF;letter-spacing:0.5px;}
+    .footer{margin-top:12px;text-align:center;pointer-events:none;}
+    .footer p{font-size:clamp(8px,1.3vw,10px);color:rgba(180,160,200,0.35);}
+    .footer .gh{color:rgba(180,160,200,0.45);font-size:9px;margin-top:2px;}
+
+    @media(max-height:500px){
+      .title{font-size:22px;}
+      .subtitle{font-size:9px;margin-top:2px;}
+      .cards{gap:8px;}
+      .card{padding:10px;width:180px;}
+      .card-icon{width:48px;height:48px;margin:4px 0 6px;}
+      .card-title{font-size:13px;}
+      .card-desc{font-size:8px;}
+      .footer{margin-top:6px;}
+    }
+    @media(max-width:500px){
+      .cards{flex-direction:column;align-items:center;}
+      .card{width:85vw;max-width:300px;flex-direction:row;padding:12px 16px;gap:14px;}
+      .card-icon{margin:0;width:50px;height:50px;flex-shrink:0;}
+      .card-text{text-align:left;}
+      .card-title{text-align:left;}
+      .card-desc{text-align:left;}
+    }
+  </style>
+</head>
+<body>
+<canvas id="bg"></canvas>
+<div class="hub">
+  <div class="title-area">
+    <div class="title">Imunojoguinho</div>
+    <div class="subtitle">Jogos educativos sobre o Sistema Imunológico</div>
+  </div>
+
+  <div class="cards">
+    <!-- Card 1: Fagócito -->
+    <a class="card" href="fagocito.html" id="card-fago">
+      <div class="card-stripe" style="background:linear-gradient(90deg,#9955CC,#CC99EE);"></div>
+      <div class="card-icon" style="background:radial-gradient(circle at 35% 35%,#CC99EE,#7744AA);">
+        <canvas id="icon-fago" width="64" height="64"></canvas>
+      </div>
+      <div class="card-text">
+        <div class="card-title">Jogo do Fagócito</div>
+        <div class="card-desc">Controle um macrófago ou neutrófilo e fagocite patógenos! Modo livre com power-ups e citocinas.</div>
+        <span class="card-tag" style="background:rgba(153,85,204,0.3);">AÇÃO / LIVRE</span>
+      </div>
+    </a>
+
+    <!-- Card 2: ImmunoRun -->
+    <a class="card" href="runner.html" id="card-runner">
+      <div class="card-stripe" style="background:linear-gradient(90deg,#55BB55,#88DD88);"></div>
+      <div class="card-icon" style="background:radial-gradient(circle at 35% 35%,#99EE99,#338833);">
+        <canvas id="icon-runner" width="64" height="64"></canvas>
+      </div>
+      <div class="card-text">
+        <div class="card-title">Imuno Run</div>
+        <div class="card-desc">Seja uma bactéria fugindo do macrófago! Desvie de anticorpos, neutrófilos e complemento.</div>
+        <span class="card-tag" style="background:rgba(85,187,85,0.3);">ENDLESS RUNNER</span>
+      </div>
+    </a>
+
+    <!-- Card 3: Arena -->
+    <a class="card" href="arena.html" id="card-arena">
+      <div class="card-stripe" style="background:linear-gradient(90deg,#FF8866,#FFCC77,#88BBFF);"></div>
+      <div class="card-icon" style="background:radial-gradient(circle at 35% 35%,#FFDDE2,#FFCCD2);">
+        <canvas id="icon-arena" width="64" height="64"></canvas>
+      </div>
+      <div class="card-text">
+        <div class="card-title">Arena Imunológica</div>
+        <div class="card-desc">Tower defense! Posicione células imunes para defender o tecido contra bactérias, helmintos e tumores.</div>
+        <span class="card-tag" style="background:rgba(255,136,102,0.3);">TOWER DEFENSE / 5 FASES</span>
+      </div>
+    </a>
+  </div>
+
+  <div class="footer">
+    <p>Toque/clique em um jogo para começar — funciona no celular!</p>
+  </div>
+</div>
+
+<script>
+// Animated background particles
+const bgCanvas = document.getElementById('bg');
+const bgCtx = bgCanvas.getContext('2d');
+let W, H;
+function resizeBg() {
+  W = bgCanvas.width = window.innerWidth;
+  H = bgCanvas.height = window.innerHeight;
+}
+resizeBg();
+window.addEventListener('resize', resizeBg);
+
+const particles = [];
+const colors = ['rgba(255,100,100,','rgba(100,150,255,','rgba(150,100,255,','rgba(100,255,150,','rgba(255,200,100,'];
+function spawnP() {
+  if (particles.length < 50) {
+    particles.push({
+      x: Math.random() * W,
+      y: H + 5,
+      vx: (Math.random() - 0.5) * 0.4,
+      vy: -(0.2 + Math.random() * 0.6),
+      r: 1 + Math.random() * 2.5,
+      life: 1,
+      decay: 0.002 + Math.random() * 0.004,
+      col: colors[Math.floor(Math.random() * colors.length)]
+    });
+  }
+}
+
+// Floating cell shapes in background
+const bgCells = [];
+for (let i = 0; i < 12; i++) {
+  bgCells.push({
+    x: Math.random() * 2000,
+    y: Math.random() * 1200,
+    r: 20 + Math.random() * 50,
+    spd: 0.08 + Math.random() * 0.15,
+    alpha: 0.02 + Math.random() * 0.03,
+    phase: Math.random() * Math.PI * 2
+  });
+}
+
+function drawBg(t) {
+  // Dark gradient
+  const g = bgCtx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, '#0D0515');
+  g.addColorStop(0.5, '#1A0A2E');
+  g.addColorStop(1, '#0D0515');
+  bgCtx.fillStyle = g;
+  bgCtx.fillRect(0, 0, W, H);
+
+  // Subtle tissue hex pattern
+  bgCtx.strokeStyle = 'rgba(100,50,80,0.04)';
+  bgCtx.lineWidth = 0.8;
+  const cs = 55;
+  for (let x = 0; x < W + cs; x += cs) {
+    for (let y = 0; y < H + cs; y += cs) {
+      const row = Math.floor(y / cs);
+      const off = (row % 2) * cs * 0.5;
+      bgCtx.beginPath();
+      bgCtx.arc(x + off, y, cs * 0.38, 0, Math.PI * 2);
+      bgCtx.stroke();
+    }
+  }
+
+  // Floating cells
+  for (const c of bgCells) {
+    c.x -= c.spd;
+    c.phase += 0.005;
+    if (c.x + c.r < 0) { c.x = W + c.r + Math.random() * 200; c.y = Math.random() * H; }
+    const a = c.alpha + Math.sin(c.phase) * 0.01;
+    bgCtx.beginPath();
+    bgCtx.arc(c.x, c.y + Math.sin(c.phase * 2) * 10, c.r, 0, Math.PI * 2);
+    bgCtx.fillStyle = 'rgba(200,140,180,' + a + ')';
+    bgCtx.fill();
+    // nucleus
+    bgCtx.beginPath();
+    bgCtx.arc(c.x - c.r * 0.15, c.y + Math.sin(c.phase * 2) * 10 - c.r * 0.1, c.r * 0.3, 0, Math.PI * 2);
+    bgCtx.fillStyle = 'rgba(180,100,150,' + a * 0.8 + ')';
+    bgCtx.fill();
+  }
+
+  // Particles
+  spawnP();
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx;
+    p.y += p.vy;
+    p.life -= p.decay;
+    if (p.life <= 0 || p.y < -10) { particles.splice(i, 1); continue; }
+    bgCtx.beginPath();
+    bgCtx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+    bgCtx.fillStyle = p.col + p.life + ')';
+    bgCtx.fill();
+  }
+}
+
+// Animated mini icons in each card
+function drawIconFago(t) {
+  const c = document.getElementById('icon-fago');
+  if (!c) return;
+  const x = c.getContext('2d');
+  x.clearRect(0, 0, 64, 64);
+  // Pseudopods
+  for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * Math.PI * 2 + t * 0.8;
+    const l = 18 + Math.sin(t * 1.5 + i) * 3;
+    x.beginPath();
+    x.ellipse(32 + Math.cos(a) * l, 32 + Math.sin(a) * l, 5, 4, a, 0, Math.PI * 2);
+    x.fillStyle = '#7744AA';
+    x.fill();
+  }
+  // Body
+  x.beginPath();
+  x.arc(32, 32, 16, 0, Math.PI * 2);
+  const g = x.createRadialGradient(29, 29, 2, 32, 32, 16);
+  g.addColorStop(0, '#CC99EE');
+  g.addColorStop(1, '#7744AA');
+  x.fillStyle = g;
+  x.fill();
+  x.strokeStyle = '#553399';
+  x.lineWidth = 1.5;
+  x.stroke();
+  // Eyes
+  x.fillStyle = '#FFF';
+  x.beginPath(); x.arc(28, 30, 3, 0, Math.PI * 2); x.fill();
+  x.beginPath(); x.arc(36, 30, 3, 0, Math.PI * 2); x.fill();
+  x.fillStyle = '#660066';
+  x.beginPath(); x.arc(29, 31, 1.5, 0, Math.PI * 2); x.fill();
+  x.beginPath(); x.arc(37, 31, 1.5, 0, Math.PI * 2); x.fill();
+}
+
+function drawIconRunner(t) {
+  const c = document.getElementById('icon-runner');
+  if (!c) return;
+  const x = c.getContext('2d');
+  x.clearRect(0, 0, 64, 64);
+  // Flagella
+  x.strokeStyle = '#55AA55';
+  x.lineWidth = 2;
+  x.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const f = i / 9, fx = 14 - f * 14, fy = 32 + Math.sin(t * 3 + f * 4) * (3 + f * 5);
+    if (i === 0) x.moveTo(fx, fy); else x.lineTo(fx, fy);
+  }
+  x.stroke();
+  // Body
+  x.beginPath();
+  x.ellipse(36, 32, 14, 10, 0, 0, Math.PI * 2);
+  const g = x.createRadialGradient(33, 29, 2, 36, 32, 14);
+  g.addColorStop(0, '#99EE99');
+  g.addColorStop(1, '#338833');
+  x.fillStyle = g;
+  x.fill();
+  x.strokeStyle = '#337733';
+  x.lineWidth = 1.5;
+  x.stroke();
+  // Eyes
+  x.fillStyle = '#FFF';
+  x.beginPath(); x.arc(33, 29, 3, 0, Math.PI * 2); x.fill();
+  x.beginPath(); x.arc(41, 29, 3, 0, Math.PI * 2); x.fill();
+  x.fillStyle = '#111';
+  x.beginPath(); x.arc(34, 30, 1.5, 0, Math.PI * 2); x.fill();
+  x.beginPath(); x.arc(42, 30, 1.5, 0, Math.PI * 2); x.fill();
+}
+
+function drawIconArena(t) {
+  const c = document.getElementById('icon-arena');
+  if (!c) return;
+  const x = c.getContext('2d');
+  x.clearRect(0, 0, 64, 64);
+  // Mini battlefield
+  x.fillStyle = '#FFDDE2';
+  x.fillRect(0, 0, 64, 64);
+  // Base zone
+  x.fillStyle = 'rgba(80,220,100,0.15)';
+  x.fillRect(0, 0, 12, 64);
+  // Ally cells
+  const allies = [
+    { x: 18, y: 20, col: '#4488DD', r: 5 },
+    { x: 25, y: 40, col: '#9955CC', r: 7 },
+    { x: 15, y: 55, col: '#DD7766', r: 5 },
+  ];
+  for (const a of allies) {
+    x.beginPath();
+    x.arc(a.x, a.y + Math.sin(t + a.x) * 2, a.r, 0, Math.PI * 2);
+    const ag = x.createRadialGradient(a.x - 1, a.y - 1, 0, a.x, a.y, a.r);
+    ag.addColorStop(0, '#FFF');
+    ag.addColorStop(1, a.col);
+    x.fillStyle = ag;
+    x.fill();
+  }
+  // Enemy
+  const ex = 48 + Math.sin(t * 0.7) * 3;
+  x.beginPath();
+  x.arc(ex, 30, 5, 0, Math.PI * 2);
+  const eg = x.createRadialGradient(ex - 1, 28, 0, ex, 30, 5);
+  eg.addColorStop(0, '#AAFFAA');
+  eg.addColorStop(1, '#338833');
+  x.fillStyle = eg;
+  x.fill();
+  // Projectile
+  const px = 30 + ((t * 40) % 25);
+  x.beginPath();
+  x.arc(px, 32, 2, 0, Math.PI * 2);
+  x.fillStyle = '#FFEE44';
+  x.fill();
+}
+
+// Animation loop
+function animLoop() {
+  const t = Date.now() * 0.001;
+  drawBg(t);
+  drawIconFago(t);
+  drawIconRunner(t);
+  drawIconArena(t);
+  requestAnimationFrame(animLoop);
+}
+animLoop();
+</script>
+</body>
+</html>

@@ -1,0 +1,943 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>ImmunoRun - Fuga Bacteriana</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      width: 100%; height: 100%;
+      overflow: hidden;
+      background: #1a0a2e;
+      touch-action: none;
+      -webkit-touch-callout: none;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+  </style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<script>
+// ========================================
+// IMUNO RUN - Fuga Bacteriana
+// ========================================
+
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+
+// --- Fixed internal resolution (zoom-proof) ---
+const GW = 800;
+const GH = 450;
+canvas.width = GW;
+canvas.height = GH;
+
+// --- Fixed game constants ---
+const GROUND_Y     = 360;
+const PLAYER_W     = 50;
+const PLAYER_H     = 35;
+const DUCK_H       = 15;
+const MACRO_W      = 85;
+const MACRO_H      = 55;
+const GRAVITY      = 0.52;
+const JUMP_FORCE   = -12;
+const BASE_SPEED   = 3.5;
+
+// --- Fixed timestep (60fps logic regardless of display Hz) ---
+const TARGET_FPS  = 60;
+const FRAME_TIME  = 1000 / TARGET_FPS;
+let lastTimestamp = 0;
+let accumulator   = 0;
+
+// --- Audio ---
+let audioCtx = null;
+function initAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+}
+function snd(freq, dur, type = 'square', vol = 0.08) {
+  if (!audioCtx) return;
+  try {
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.type = type; o.frequency.value = freq; g.gain.value = vol;
+    o.connect(g); g.connect(audioCtx.destination); o.start();
+    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur);
+    o.stop(audioCtx.currentTime + dur);
+  } catch(e) {}
+}
+function sndJump()     { snd(520,0.1,'sine',0.1); setTimeout(()=>snd(700,0.1,'sine',0.06),30); }
+function sndHit()      { snd(110,0.3,'sawtooth',0.1); }
+function sndSlide()    { snd(200,0.12,'triangle',0.06); }
+function sndScore()    { snd(440,0.08,'sine',0.05); setTimeout(()=>snd(660,0.1,'sine',0.04),50); }
+function sndDodge()    { snd(880,0.05,'sine',0.04); }
+function sndPowerUp()  { snd(523,0.1,'sine',0.08); setTimeout(()=>snd(659,0.1,'sine',0.08),80); setTimeout(()=>snd(784,0.15,'sine',0.08),160); }
+function sndShieldHit(){ snd(300,0.15,'triangle',0.08); snd(600,0.1,'sine',0.05); }
+function sndCount()    { snd(440,0.15,'sine',0.1); }
+function sndGo()       { snd(880,0.2,'sine',0.12); }
+function sndDie()      { snd(400,0.2,'square',0.08); setTimeout(()=>snd(300,0.2,'square',0.08),150); setTimeout(()=>snd(200,0.5,'sawtooth',0.1),300); }
+function sndPhago()    { snd(150,0.5,'sawtooth',0.06); snd(80,0.8,'square',0.04); }
+
+// --- State ---
+let state = 'menu';
+let score = 0;
+let highScore = parseInt(localStorage.getItem('immunorun_hs') || '0');
+let speed = 0;
+let frame = 0;
+let lastObsFrame = 0;
+let shakeTimer = 0;
+let flashAlpha = 0;
+let gameOverTime = 0;
+let countdownVal = 3;
+let countdownT = 0;
+let dyingT = 0;
+let streak = 0;
+let bestStreak = 0;
+
+let player = {};
+let macro = {};
+let obstacles = [];
+let particles = [];
+let dust = [];
+let lines = [];
+let texts = [];
+let bgCells = [];
+let bumps = [];
+let vessels = [];
+let powerUps = [];
+
+// --- Facts ---
+const facts = [
+  "Macrófagos são células do sistema imune inato que fagocitam patógenos através de pseudópodes.",
+  "Anticorpos (imunoglobulinas) são proteínas em forma de Y produzidas por plasmócitos.",
+  "O sistema complemento é formado por mais de 30 proteínas que auxiliam na opsonização e lise de patógenos.",
+  "Neutrófilos são os leucócitos mais abundantes e os primeiros a chegar no local da infecção.",
+  "A fagocitose envolve reconhecimento, englobamento e digestão do patógeno dentro do fagolisossomo.",
+  "Citocinas como TNF-α e interleucinas coordenam a comunicação entre células do sistema imune.",
+  "Macrófagos são APCs que ativam linfócitos T via MHC classe II.",
+  "A resposta inflamatória envolve vasodilatação, aumento de permeabilidade e quimiotaxia de leucócitos.",
+  "PAMPs são reconhecidos por receptores como os TLRs dos macrófagos.",
+  "Após a fagocitose, o macrófago apresenta peptídeos antigênicos, conectando imunidade inata e adaptativa.",
+  "A opsonização marca patógenos com anticorpos ou complemento para facilitar a fagocitose.",
+  "Macrófagos M1 são pró-inflamatórios, enquanto M2 participam do reparo tecidual.",
+];
+
+const OBS_TYPES = {
+  ANTICORPO:   { label:'Anticorpo (IgG)',   color:'#FFD700', dark:'#B8960F', ground:true },
+  NEUTROFILO:  { label:'Neutrófilo',        color:'#5599DD', dark:'#336699', ground:true },
+  CITOCINA:    { label:'Citocina (TNF-α)',   color:'#FF7744', dark:'#CC4411', ground:false },
+  COMPLEMENTO: { label:'Complemento (C3b)', color:'#44DDAA', dark:'#22AA77', ground:true },
+};
+const obsKeys = Object.keys(OBS_TYPES);
+
+// --- Init ---
+function initGame() {
+  score = 0; speed = BASE_SPEED; frame = 0; lastObsFrame = -60;
+  shakeTimer = 0; flashAlpha = 0; streak = 0; bestStreak = 0;
+  obstacles = []; particles = []; dust = []; lines = []; texts = []; powerUps = [];
+
+  player = {
+    x: 140, y: GROUND_Y - PLAYER_H, w: PLAYER_W, h: PLAYER_H,
+    vy: 0, grounded: true, jumping: false,
+    ducking: false, duckTimer: 0,
+    wobble: 0, flagella: 0, hitCD: 0,
+    shield: 0, shieldPulse: 0,
+  };
+
+  macro = {
+    x: -140, targetX: -90,
+    y: GROUND_Y - MACRO_H * 0.9,
+    w: MACRO_W, h: MACRO_H,
+    pulse: 0, pseudo: 0,
+  };
+
+  bgCells = [];
+  for (let i = 0; i < 16; i++)
+    bgCells.push({ x: Math.random()*GW*2, y: Math.random()*(GROUND_Y-40)+15,
+      r: 18+Math.random()*40, spd: 0.15+Math.random()*0.35, a: 0.04+Math.random()*0.07 });
+
+  vessels = [];
+  for (let i = 0; i < 3; i++)
+    vessels.push({ x: GW*0.3+Math.random()*GW, y1: Math.random()*GROUND_Y*0.3,
+      y2: GROUND_Y*(0.5+Math.random()*0.5), w: 7+Math.random()*10,
+      spd: 0.1+Math.random()*0.2, curve: Math.random()*40-20 });
+
+  bumps = [];
+  for (let i = 0; i < 45; i++)
+    bumps.push({ x: Math.random()*GW*2, r: 2+Math.random()*4 });
+}
+
+// --- Spawners ---
+function spawnObs() {
+  const k = obsKeys[Math.floor(Math.random()*obsKeys.length)];
+  const t = OBS_TYPES[k];
+  const w = PLAYER_W * (0.65+Math.random()*0.35);
+  const h = PLAYER_H * (0.8+Math.random()*0.25);
+  const y = t.ground ? GROUND_Y - h : GROUND_Y - PLAYER_H - h*0.15;
+  obstacles.push({ x:GW+40, y, w, h, type:k, cfg:t, passed:false });
+}
+
+function spawnPU() {
+  powerUps.push({ x:GW+40, y:GROUND_Y-PLAYER_H*1.8-Math.random()*30,
+    w:28, h:28, pulse:0, collected:false });
+}
+
+function addParticle(x,y,color,count=8,sp=5) {
+  for (let i=0;i<count;i++)
+    particles.push({ x,y, vx:(Math.random()-0.5)*sp, vy:(Math.random()-0.8)*sp*0.7,
+      life:1, decay:0.015+Math.random()*0.025, r:2+Math.random()*3.5, color });
+}
+
+function addDust(x,y) {
+  dust.push({ x:x+(Math.random()-0.5)*5, y:y+Math.random()*2,
+    vx:-(speed*0.3+Math.random()), vy:-(0.3+Math.random()*0.7),
+    life:1, decay:0.03+Math.random()*0.02, r:1.5+Math.random()*2 });
+}
+
+function addLine() {
+  lines.push({ x:GW+5, y:Math.random()*GROUND_Y, len:15+Math.random()*30+speed*5,
+    a:0.08+Math.random()*0.12, spd:speed*(1.5+Math.random()) });
+}
+
+function addText(x,y,txt,color='#FFF',size=13) {
+  texts.push({ x,y,txt,color,size,life:1,vy:-1.3 });
+}
+
+// --- Collision ---
+function hit(a,b) {
+  const m=5;
+  return a.x+m<b.x+b.w-m && a.x+a.w-m>b.x+m && a.y+m<b.y+b.h-m && a.y+a.h-m>b.y+m;
+}
+
+// --- UPDATE (1 tick = 1/60s) ---
+function update() {
+  // Countdown
+  if (state==='countdown') {
+    countdownT++;
+    if (countdownT>=50) {
+      countdownT=0; countdownVal--;
+      if (countdownVal<=0) { state='playing'; sndGo(); }
+      else sndCount();
+    }
+    player.wobble+=0.1; player.flagella+=0.15;
+    macro.pulse+=0.03; macro.pseudo+=0.02;
+    return;
+  }
+
+  // Dying
+  if (state==='dying') {
+    dyingT++;
+    macro.x += (player.x - macro.w*0.3 - macro.x)*0.08;
+    macro.pulse+=0.08; macro.pseudo+=0.06; player.wobble+=0.3;
+    if (dyingT%5===0) addParticle(player.x+player.w/2, player.y+player.h/2, '#9955BB',3,3);
+    if (dyingT>=80) {
+      state='gameover'; gameOverTime=Date.now();
+      if (score>highScore) { highScore=score; localStorage.setItem('immunorun_hs',highScore+''); }
+      sndDie();
+    }
+    return;
+  }
+
+  if (state!=='playing') return;
+
+  frame++;
+
+  // Speed & difficulty - speed increases but caps
+  speed = BASE_SPEED * (1 + score*0.0003);
+  if (speed > BASE_SPEED*3) speed = BASE_SPEED*3;
+
+  // Score
+  if (frame%3===0) { score++; if (score%100===0) sndScore(); }
+
+  // --- Player ---
+  player.wobble += 0.15;
+  player.flagella += 0.2 + speed*0.015;
+  if (player.hitCD > 0) player.hitCD--;
+  if (player.shield > 0) { player.shield--; player.shieldPulse+=0.15; }
+
+  if (player.ducking) {
+    player.duckTimer--;
+    if (player.duckTimer<=0) {
+      player.ducking=false; player.h=PLAYER_H; player.y=GROUND_Y-PLAYER_H;
+    }
+  }
+
+  if (!player.grounded) {
+    player.vy += GRAVITY;
+    player.y += player.vy;
+    const gl = player.ducking ? GROUND_Y-DUCK_H : GROUND_Y-PLAYER_H;
+    if (player.y >= gl) {
+      player.y=gl; player.vy=0; player.grounded=true; player.jumping=false;
+      for (let i=0;i<4;i++) addDust(player.x+player.w*0.3, GROUND_Y);
+    }
+  }
+
+  if (player.grounded && !player.ducking && frame%4===0) addDust(player.x, GROUND_Y);
+  if (player.ducking && frame%2===0) { addDust(player.x+player.w*0.4, GROUND_Y); addDust(player.x+player.w*0.2, GROUND_Y); }
+  if (frame%3===0) addLine();
+  if (speed>BASE_SPEED*1.5 && frame%2===0) addLine();
+
+  // --- Macrophage ---
+  macro.pulse += 0.05;
+  macro.pseudo += 0.03;
+  // Approach rate decreases as score increases → game can go on forever
+  const approach = speed * Math.max(0.001, 0.0035 - score*0.0000015);
+  macro.targetX += approach;
+  macro.x += (macro.targetX - macro.x) * 0.02;
+  macro.y = GROUND_Y - MACRO_H*0.9;
+
+  if (macro.x + macro.w*0.55 >= player.x) {
+    state='dying'; dyingT=0; sndPhago(); return;
+  }
+
+  // --- Obstacles ---
+  const gap = Math.max(35, 70 - score*0.008);
+  if (frame - lastObsFrame > gap + Math.random()*50) { spawnObs(); lastObsFrame=frame; }
+
+  // Power-ups every ~600 frames after score 50
+  if (score>50 && frame%400===0 && player.shield<=0) spawnPU();
+
+  const pHh = player.ducking ? DUCK_H : player.h;
+  const pYy = player.ducking ? GROUND_Y-DUCK_H : player.y;
+  const pb = { x:player.x, y:pYy, w:player.w, h:pHh };
+
+  for (let i=obstacles.length-1; i>=0; i--) {
+    const o = obstacles[i];
+    o.x -= speed;
+
+    if (!o.passed && player.hitCD<=0 && hit(pb, o)) {
+      if (player.shield>0) {
+        o.passed=true; player.shield=0; shakeTimer=5; flashAlpha=0.12;
+        addParticle(player.x+player.w/2,pYy+pHh/2,'#44DDFF',14,7);
+        sndShieldHit(); addText(player.x,pYy-18,'BIOFILME DESTRUÍDO!','#44DDFF',11);
+        streak=0;
+      } else {
+        o.passed=true; player.hitCD=30;
+        macro.targetX += 28; // fixed penalty in pixels, not % of screen
+        shakeTimer=12; flashAlpha=0.3;
+        addParticle(player.x+player.w/2,pYy+pHh/2,'#FF4444',14,7);
+        sndHit(); streak=0; addText(player.x,pYy-12,'OUCH!','#FF6666',15);
+      }
+    }
+
+    if (!o.passed && o.x+o.w < player.x) {
+      o.passed=true; streak++;
+      if (streak>bestStreak) bestStreak=streak;
+      addParticle(o.x+o.w/2, o.y+o.h/2, o.cfg.color, 3);
+      sndDodge();
+      if (streak>=10 && streak%5===0) addText(player.x+player.w,pYy-22,streak+'x COMBO!','#FFD700',16);
+      else if (streak===5) addText(player.x+player.w,pYy-18,'5x COMBO!','#FFAA00',14);
+    }
+
+    if (o.x+o.w < -40) obstacles.splice(i,1);
+  }
+
+  // Power-ups
+  for (let i=powerUps.length-1; i>=0; i--) {
+    const p = powerUps[i]; p.x -= speed; p.pulse+=0.1;
+    if (!p.collected && hit(pb, p)) {
+      p.collected=true; player.shield=300; player.shieldPulse=0;
+      addParticle(p.x+p.w/2,p.y+p.h/2,'#44FFDD',18,9);
+      sndPowerUp(); addText(p.x,p.y-18,'BIOFILME ATIVADO!','#44FFDD',13);
+    }
+    if (p.x+p.w < -40) powerUps.splice(i,1);
+  }
+
+  // BG scroll
+  for (const c of bgCells) { c.x-=speed*c.spd; if(c.x+c.r<0){c.x=GW+c.r+Math.random()*200; c.y=Math.random()*(GROUND_Y-40)+15;} }
+  for (const v of vessels) { v.x-=speed*v.spd; if(v.x<-40){v.x=GW+40+Math.random()*200; v.curve=Math.random()*40-20;} }
+  for (const b of bumps)   { b.x-=speed; if(b.x<-10) b.x=GW+Math.random()*200; }
+
+  // Particles
+  for (let i=particles.length-1;i>=0;i--) { const p=particles[i]; p.x+=p.vx;p.y+=p.vy;p.vy+=0.12;p.life-=p.decay; if(p.life<=0)particles.splice(i,1); }
+  for (let i=dust.length-1;i>=0;i--)      { const d=dust[i]; d.x+=d.vx;d.y+=d.vy;d.life-=d.decay; if(d.life<=0)dust.splice(i,1); }
+  for (let i=lines.length-1;i>=0;i--)     { lines[i].x-=lines[i].spd; if(lines[i].x+lines[i].len<0)lines.splice(i,1); }
+  for (let i=texts.length-1;i>=0;i--)     { const t=texts[i]; t.y+=t.vy;t.life-=0.015; if(t.life<=0)texts.splice(i,1); }
+
+  if (shakeTimer>0) shakeTimer--;
+  if (flashAlpha>0) flashAlpha-=0.012;
+}
+
+// ===========================
+// DRAWING
+// ===========================
+
+function drawBG() {
+  const g = ctx.createLinearGradient(0,0,0,GROUND_Y);
+  g.addColorStop(0,'#1E0E36'); g.addColorStop(0.35,'#3A1852');
+  g.addColorStop(0.65,'#5C2D6B'); g.addColorStop(1,'#7A4060');
+  ctx.fillStyle=g; ctx.fillRect(0,0,GW,GROUND_Y);
+
+  // Vessels
+  for (const v of vessels) {
+    ctx.beginPath(); ctx.moveTo(v.x,v.y1);
+    ctx.quadraticCurveTo(v.x+v.curve,(v.y1+v.y2)/2,v.x-v.curve*0.5,v.y2);
+    ctx.strokeStyle='rgba(180,50,70,0.1)'; ctx.lineWidth=v.w; ctx.lineCap='round'; ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(v.x,v.y1);
+    ctx.quadraticCurveTo(v.x+v.curve,(v.y1+v.y2)/2,v.x-v.curve*0.5,v.y2);
+    ctx.strokeStyle='rgba(220,80,100,0.05)'; ctx.lineWidth=v.w*0.5; ctx.stroke();
+  }
+
+  for (const c of bgCells) {
+    ctx.beginPath(); ctx.arc(c.x,c.y,c.r,0,Math.PI*2);
+    ctx.fillStyle=`rgba(255,180,200,${c.a})`; ctx.fill();
+    ctx.beginPath(); ctx.arc(c.x-c.r*0.1,c.y-c.r*0.1,c.r*0.35,0,Math.PI*2);
+    ctx.fillStyle=`rgba(255,140,170,${c.a*0.7})`; ctx.fill();
+  }
+
+  // Speed lines
+  for (const s of lines) {
+    ctx.beginPath(); ctx.moveTo(s.x,s.y); ctx.lineTo(s.x+s.len,s.y);
+    ctx.strokeStyle=`rgba(255,200,255,${s.a})`; ctx.lineWidth=1; ctx.stroke();
+  }
+
+  // Ground
+  const gg = ctx.createLinearGradient(0,GROUND_Y,0,GH);
+  gg.addColorStop(0,'#C4596A'); gg.addColorStop(0.1,'#B44D5E');
+  gg.addColorStop(0.5,'#943D4E'); gg.addColorStop(1,'#6B2A3A');
+  ctx.fillStyle=gg; ctx.fillRect(0,GROUND_Y,GW,GH-GROUND_Y);
+
+  ctx.strokeStyle='rgba(255,160,180,0.5)'; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.moveTo(0,GROUND_Y); ctx.lineTo(GW,GROUND_Y); ctx.stroke();
+
+  for (const b of bumps) {
+    ctx.beginPath(); ctx.arc(b.x,GROUND_Y+5+b.r,b.r,0,Math.PI*2);
+    ctx.fillStyle='rgba(140,50,65,0.2)'; ctx.fill();
+  }
+}
+
+function drawDust() {
+  for (const d of dust) {
+    ctx.globalAlpha=d.life*0.45;
+    ctx.beginPath(); ctx.arc(d.x,d.y,d.r*d.life,0,Math.PI*2);
+    ctx.fillStyle='#D4A0A0'; ctx.fill();
+  }
+  ctx.globalAlpha=1;
+}
+
+function drawBact() {
+  const px=player.x, pw=player.w;
+  const py=player.ducking?GROUND_Y-DUCK_H:player.y;
+  const ph=player.ducking?DUCK_H:player.h;
+  let sc=1;
+  if (state==='dying') { sc=1-Math.min(1,dyingT/80)*0.85; if(sc<0.1)return; }
+  if (player.hitCD>0 && Math.floor(player.hitCD/3)%2===0) return;
+
+  ctx.save();
+  const wx=Math.sin(player.wobble)*1.5, wy=Math.cos(player.wobble*0.7);
+  ctx.translate(px+pw/2+wx, py+ph/2+wy);
+  if (sc!==1) ctx.scale(sc,sc);
+
+  // Shield
+  if (player.shield>0) {
+    const sr=Math.max(pw,ph)*0.75+Math.sin(player.shieldPulse)*2.5;
+    const sa=player.shield<60?(Math.sin(player.shieldPulse*3)*0.3+0.3):0.25;
+    ctx.beginPath(); ctx.arc(0,0,sr,0,Math.PI*2);
+    ctx.strokeStyle=`rgba(68,255,221,${sa})`; ctx.lineWidth=2.5; ctx.stroke();
+    ctx.fillStyle=`rgba(68,255,221,${sa*0.12})`; ctx.fill();
+    for (let i=0;i<6;i++) {
+      const a=(i/6)*Math.PI*2+player.shieldPulse*0.5;
+      ctx.beginPath(); ctx.arc(Math.cos(a)*sr*0.85,Math.sin(a)*sr*0.85,1.8,0,Math.PI*2);
+      ctx.fillStyle=`rgba(68,255,221,${sa*0.4})`; ctx.fill();
+    }
+  }
+
+  // Flagella
+  const shd = player.shield>0;
+  ctx.strokeStyle=shd?'#55DDAA':'#55AA55'; ctx.lineWidth=2.5;
+  ctx.beginPath();
+  for (let i=0;i<20;i++) {
+    const t=i/19, fx=-pw/2-t*pw*0.85, fy=Math.sin(player.flagella+t*4.5)*(4+t*7);
+    if(i===0) ctx.moveTo(fx,fy); else ctx.lineTo(fx,fy);
+  }
+  ctx.stroke();
+
+  // Pili
+  ctx.strokeStyle=shd?'rgba(68,221,170,0.4)':'rgba(85,170,85,0.4)'; ctx.lineWidth=1;
+  for (let i=0;i<5;i++) {
+    const a=(i/5)*Math.PI+Math.PI*0.5+player.wobble*0.2;
+    const bx=Math.cos(a)*pw*0.42, by=Math.sin(a)*ph*0.42;
+    ctx.beginPath(); ctx.moveTo(bx,by);
+    ctx.lineTo(bx+Math.cos(a)*7, by+Math.sin(a)*7+Math.sin(player.wobble+i)*2);
+    ctx.stroke();
+  }
+
+  // Body
+  ctx.beginPath(); ctx.ellipse(0,0,pw/2,ph/2,0,0,Math.PI*2);
+  const bg=ctx.createRadialGradient(-pw*0.1,-ph*0.1,0,0,0,pw/2);
+  if(shd){bg.addColorStop(0,'#88EEDD');bg.addColorStop(0.7,'#55CCAA');bg.addColorStop(1,'#339977');}
+  else   {bg.addColorStop(0,'#99EE99');bg.addColorStop(0.7,'#55BB55');bg.addColorStop(1,'#338833');}
+  ctx.fillStyle=bg; ctx.fill();
+  ctx.strokeStyle=shd?'#228866':'#337733'; ctx.lineWidth=1.5; ctx.stroke();
+
+  // Membrane dots
+  for (let i=0;i<8;i++) {
+    const a=(i/8)*Math.PI*2+player.wobble*0.3;
+    ctx.beginPath(); ctx.arc(Math.cos(a)*pw*0.37,Math.sin(a)*ph*0.37,1.6,0,Math.PI*2);
+    ctx.fillStyle=shd?'#449977':'#448844'; ctx.fill();
+  }
+
+  // Eyes
+  const ey=-ph*0.12, es=pw*0.15;
+  const danger=Math.max(0,macro.x+macro.w*0.55)/player.x;
+  [[-es,ey],[es,ey]].forEach(([x,y])=>{ ctx.beginPath();ctx.ellipse(x,y,4,5,0,0,Math.PI*2);ctx.fillStyle='white';ctx.fill(); });
+  const lb=danger>0.4?-1.5:1.5;
+  [[-es+lb,ey+0.5],[es+lb,ey+0.5]].forEach(([x,y])=>{ ctx.beginPath();ctx.arc(x,y,2,0,Math.PI*2);ctx.fillStyle='#111';ctx.fill(); });
+
+  if (danger>0.6) {
+    ctx.beginPath(); ctx.ellipse(0,ph*0.15,4.5,3.5,0,0,Math.PI*2);
+    ctx.fillStyle='#226622'; ctx.fill();
+    const sp=player.wobble*2;
+    ctx.beginPath(); ctx.ellipse(pw*0.33,-ph*0.28+Math.sin(sp)*2,1.8,3,0.3,0,Math.PI*2);
+    ctx.fillStyle='rgba(100,200,255,0.7)'; ctx.fill();
+    ctx.strokeStyle='#337733'; ctx.lineWidth=1.5;
+    ctx.beginPath();ctx.moveTo(-es-3,ey-7);ctx.lineTo(-es+3,ey-5);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(es+3,ey-7);ctx.lineTo(es-3,ey-5);ctx.stroke();
+  } else if (danger>0.3) {
+    ctx.beginPath(); ctx.arc(0,ph*0.18,4.5,0.2,Math.PI-0.2);
+    ctx.strokeStyle='#337733'; ctx.lineWidth=1.5; ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(pw*0.33,-ph*0.22,1.5,2.5,0.3,0,Math.PI*2);
+    ctx.fillStyle='rgba(100,200,255,0.5)'; ctx.fill();
+  } else {
+    ctx.beginPath(); ctx.arc(0,ph*0.08,4,0.1,Math.PI-0.1);
+    ctx.strokeStyle='#337733'; ctx.lineWidth=1.5; ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+function drawMacro() {
+  const mx=macro.x, my=macro.y, mw=macro.w, mh=macro.h;
+  const p=Math.sin(macro.pulse)*3;
+  let es=1; if(state==='dying') es=1+Math.min(1,dyingT/80)*0.3;
+
+  ctx.save();
+  ctx.translate(mx+mw/2, my+mh/2);
+  if(es!==1) ctx.scale(es,es);
+
+  const danger=Math.max(0,mx+mw*0.55)/(player.x||1);
+  if(danger>0.3){ ctx.beginPath();ctx.arc(0,0,mw*0.65+p*2,0,Math.PI*2);
+    ctx.fillStyle=`rgba(150,50,180,${danger*0.07})`;ctx.fill(); }
+
+  for(let i=0;i<6;i++){
+    const a=(i/6)*Math.PI*2+macro.pseudo;
+    const l=mw*0.36+Math.sin(macro.pseudo*2+i*1.3)*8;
+    ctx.beginPath();ctx.ellipse(Math.cos(a)*l,Math.sin(a)*l,8+p,6+p,a,0,Math.PI*2);
+    ctx.fillStyle='#7744AA';ctx.fill();
+  }
+
+  ctx.beginPath(); ctx.ellipse(0,0,mw/2+p,mh/2+p*0.5,0,0,Math.PI*2);
+  const mg=ctx.createRadialGradient(-4,-4,0,0,0,mw/2+4);
+  mg.addColorStop(0,'#CC88EE');mg.addColorStop(0.5,'#9955CC');mg.addColorStop(1,'#6633AA');
+  ctx.fillStyle=mg;ctx.fill();ctx.strokeStyle='#553399';ctx.lineWidth=2;ctx.stroke();
+
+  ctx.beginPath();ctx.ellipse(-2,2,mw*0.16,mh*0.2,0.4,0,Math.PI*2);
+  ctx.fillStyle='rgba(40,15,70,0.4)';ctx.fill();
+
+  for(let i=0;i<4;i++){
+    const lx=Math.cos(i*1.8+macro.pulse*0.5)*mw*0.18;
+    const ly=Math.sin(i*1.8+macro.pulse*0.5)*mh*0.18;
+    ctx.beginPath();ctx.arc(lx,ly,2.5,0,Math.PI*2);ctx.fillStyle='rgba(200,100,50,0.35)';ctx.fill();
+  }
+
+  const e2=-mh*0.12;
+  ctx.beginPath();ctx.arc(-8,e2,5.5,0,Math.PI*2);ctx.fillStyle='#FFF0F0';ctx.fill();
+  ctx.beginPath();ctx.arc(-6.5,e2+1,2.8,0,Math.PI*2);ctx.fillStyle='#990000';ctx.fill();
+  ctx.beginPath();ctx.arc(8,e2,5.5,0,Math.PI*2);ctx.fillStyle='#FFF0F0';ctx.fill();
+  ctx.beginPath();ctx.arc(9.5,e2+1,2.8,0,Math.PI*2);ctx.fillStyle='#990000';ctx.fill();
+  ctx.strokeStyle='#553399';ctx.lineWidth=2.5;
+  ctx.beginPath();ctx.moveTo(-14,e2-7);ctx.lineTo(-3,e2-3.5);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(14,e2-7);ctx.lineTo(3,e2-3.5);ctx.stroke();
+
+  if(state==='dying'){
+    ctx.beginPath();ctx.arc(0,mh*0.14,8,0.1,Math.PI-0.1);
+    ctx.fillStyle='#330055';ctx.fill();ctx.strokeStyle='#440066';ctx.lineWidth=1.5;ctx.stroke();
+  } else {
+    ctx.beginPath();ctx.arc(0,mh*0.14,6.5,0.2,Math.PI-0.2);
+    ctx.strokeStyle='#440066';ctx.lineWidth=2;ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+function drawObs(o) {
+  ctx.save();
+  ctx.translate(o.x+o.w/2, o.y+o.h/2);
+  const c = o.cfg;
+
+  if(o.type==='ANTICORPO'){
+    ctx.strokeStyle=c.color; ctx.lineWidth=3.5; ctx.lineCap='round';
+    ctx.beginPath();ctx.moveTo(0,o.h*0.4);ctx.lineTo(0,-o.h*0.05);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(0,-o.h*0.05);ctx.quadraticCurveTo(-o.w*0.15,-o.h*0.2,-o.w*0.4,-o.h*0.4);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(0,-o.h*0.05);ctx.quadraticCurveTo(o.w*0.15,-o.h*0.2,o.w*0.4,-o.h*0.4);ctx.stroke();
+    ctx.fillStyle='#FFEE66';
+    [[-o.w*0.4,-o.h*0.4],[o.w*0.4,-o.h*0.4]].forEach(([x,y])=>{ctx.beginPath();ctx.arc(x,y,4.5,0,Math.PI*2);ctx.fill();});
+    ctx.fillStyle=c.color;ctx.beginPath();ctx.arc(0,o.h*0.4,4,0,Math.PI*2);ctx.fill();
+  } else if(o.type==='NEUTROFILO'){
+    const nr=Math.min(o.w,o.h)*0.42;
+    ctx.beginPath();ctx.arc(0,0,nr,0,Math.PI*2);
+    const ng=ctx.createRadialGradient(-2,-2,0,0,0,nr);
+    ng.addColorStop(0,'#AADDFF');ng.addColorStop(0.6,'#6699CC');ng.addColorStop(1,c.dark);
+    ctx.fillStyle=ng;ctx.fill();ctx.strokeStyle=c.dark;ctx.lineWidth=1.5;ctx.stroke();
+    const lr=nr*0.27;
+    ctx.fillStyle='rgba(25,50,100,0.5)';
+    [[-lr*0.8,-lr*0.3],[0,lr*0.5],[lr*0.8,-lr*0.5]].forEach(([x,y])=>{ctx.beginPath();ctx.arc(x,y,lr,0,Math.PI*2);ctx.fill();});
+  } else if(o.type==='CITOCINA'){
+    const cr=Math.min(o.w,o.h)*0.28;
+    ctx.beginPath();ctx.arc(0,0,cr*2,0,Math.PI*2);ctx.fillStyle='rgba(255,119,68,0.08)';ctx.fill();
+    ctx.beginPath();ctx.arc(0,0,cr,0,Math.PI*2);
+    const cg=ctx.createRadialGradient(-1,-1,0,0,0,cr);
+    cg.addColorStop(0,'#FFCC99');cg.addColorStop(0.5,'#FF9955');cg.addColorStop(1,c.dark);
+    ctx.fillStyle=cg;ctx.fill();ctx.strokeStyle=c.dark;ctx.lineWidth=1.5;ctx.stroke();
+    for(let i=1;i<=3;i++){
+      const wr=cr+i*6+Math.sin(frame*0.08+i)*2.5;
+      ctx.strokeStyle=`rgba(255,119,68,${0.3-i*0.08})`;ctx.lineWidth=1.5;
+      ctx.beginPath();ctx.arc(0,0,wr,-0.5,0.5);ctx.stroke();
+      ctx.beginPath();ctx.arc(0,0,wr,Math.PI-0.4,Math.PI+0.4);ctx.stroke();
+    }
+  } else if(o.type==='COMPLEMENTO'){
+    const cr2=Math.min(o.w,o.h)*0.13;
+    const pos=[[0,0],[-7,-6],[7,-4],[-4,7],[8,5],[-7,2],[3,-8]];
+    pos.forEach(([x,y],i)=>{
+      ctx.beginPath();ctx.arc(x,y,cr2-i*0.2,0,Math.PI*2);
+      const cg2=ctx.createRadialGradient(x-1,y-1,0,x,y,cr2);
+      cg2.addColorStop(0,'#88FFCC');cg2.addColorStop(1,c.dark);
+      ctx.fillStyle=cg2;ctx.fill();ctx.strokeStyle=c.dark;ctx.lineWidth=0.8;ctx.stroke();
+    });
+    ctx.strokeStyle='rgba(34,170,119,0.25)';ctx.lineWidth=1;
+    ctx.beginPath();ctx.moveTo(pos[0][0],pos[0][1]);
+    for(let i=1;i<pos.length;i++) ctx.lineTo(pos[i][0],pos[i][1]);
+    ctx.stroke();
+  }
+
+  // Label
+  ctx.font='bold 9px Arial,sans-serif'; ctx.textAlign='center';
+  ctx.fillStyle='rgba(0,0,0,0.5)'; ctx.fillText(c.label,1,-o.h/2-6);
+  ctx.fillStyle='#FFF'; ctx.fillText(c.label,0,-o.h/2-7);
+
+  ctx.restore();
+}
+
+function drawPU(pu) {
+  if(pu.collected) return;
+  ctx.save();
+  ctx.translate(pu.x+pu.w/2, pu.y+pu.h/2+Math.sin(pu.pulse)*3);
+
+  const gr=pu.w*0.7+Math.sin(pu.pulse*1.5)*2;
+  ctx.beginPath();ctx.arc(0,0,gr,0,Math.PI*2);ctx.fillStyle='rgba(68,255,221,0.12)';ctx.fill();
+
+  ctx.beginPath();
+  for(let i=0;i<6;i++){const a=(i/6)*Math.PI*2-Math.PI/2;const x=Math.cos(a)*pu.w*0.4,y=Math.sin(a)*pu.w*0.4;if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);}
+  ctx.closePath();
+  const pg=ctx.createRadialGradient(0,0,0,0,0,pu.w*0.4);
+  pg.addColorStop(0,'#88FFEE');pg.addColorStop(1,'#33CCAA');
+  ctx.fillStyle=pg;ctx.fill();ctx.strokeStyle='#22AA88';ctx.lineWidth=1.5;ctx.stroke();
+
+  ctx.font='bold 12px Arial,sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+  ctx.fillStyle='#116655';ctx.fillText('B',0,1);
+
+  ctx.font='bold 8px Arial,sans-serif';ctx.textBaseline='alphabetic';
+  ctx.fillStyle='#44FFDD';ctx.fillText('Biofilme',0,-pu.h/2-7);
+
+  ctx.restore();
+}
+
+function drawParts() {
+  for(const p of particles){ctx.globalAlpha=p.life;ctx.beginPath();ctx.arc(p.x,p.y,p.r*p.life,0,Math.PI*2);ctx.fillStyle=p.color;ctx.fill();}
+  ctx.globalAlpha=1;
+}
+
+function drawTexts() {
+  for(const t of texts){
+    ctx.globalAlpha=t.life;
+    const s=t.size*(1+(1-t.life)*0.3);
+    ctx.font=`bold ${s}px Arial,sans-serif`;ctx.textAlign='center';
+    ctx.fillStyle='rgba(0,0,0,0.35)';ctx.fillText(t.txt,t.x+1,t.y+1);
+    ctx.fillStyle=t.color;ctx.fillText(t.txt,t.x,t.y);
+  }
+  ctx.globalAlpha=1;
+}
+
+function drawUI() {
+  // Score
+  ctx.font="bold 18px 'Courier New',monospace"; ctx.textAlign='right';
+  ctx.fillStyle='rgba(0,0,0,0.3)'; ctx.fillText(score+'m',GW-13,32);
+  ctx.fillStyle='#FFF'; ctx.fillText(score+'m',GW-15,30);
+
+  if(streak>=3){ctx.font='bold 12px Arial,sans-serif';ctx.fillStyle=streak>=10?'#FFD700':'#FFAA44';ctx.fillText(streak+'x',GW-15,47);}
+
+  // Shield bar
+  if(player.shield>0){
+    const sw=100,sh=5,sx=GW-15-sw,sy=streak>=3?55:50;
+    const pct=player.shield/300;
+    ctx.fillStyle='rgba(0,0,0,0.3)';ctx.fillRect(sx,sy,sw,sh);
+    ctx.fillStyle=pct>0.3?'#44FFDD':'#FFAA44';ctx.fillRect(sx,sy,sw*pct,sh);
+    ctx.font='9px Arial,sans-serif';ctx.fillStyle='#44FFDD';ctx.fillText('BIOFILME',sx+sw,sy+sh+10);
+  }
+
+  // Danger bar
+  const bw=180,bh=12,bx=15,by=15;
+  const dp=Math.min(1,Math.max(0,(macro.x+macro.w*0.55)/player.x));
+
+  ctx.fillStyle='rgba(0,0,0,0.35)';
+  ctx.beginPath();ctx.roundRect(bx,by,bw,bh,bh/2);ctx.fill();
+  ctx.save();
+  ctx.beginPath();ctx.roundRect(bx,by,bw,bh,bh/2);ctx.clip();
+  const dg=ctx.createLinearGradient(bx,0,bx+bw,0);
+  dg.addColorStop(0,'#44FF88');dg.addColorStop(0.4,'#FFEE44');dg.addColorStop(0.7,'#FF8844');dg.addColorStop(1,'#FF2222');
+  ctx.fillStyle=dg;ctx.fillRect(bx,by,bw*dp,bh);
+  ctx.restore();
+  ctx.strokeStyle='rgba(255,255,255,0.35)';ctx.lineWidth=1;
+  ctx.beginPath();ctx.roundRect(bx,by,bw,bh,bh/2);ctx.stroke();
+
+  ctx.font='bold 10px Arial,sans-serif';ctx.textAlign='left';
+  ctx.fillStyle=dp>0.7?'#FF6666':'rgba(255,255,255,0.6)';
+  ctx.fillText('PERIGO',bx,by+bh+12);
+
+  // Edge vignette
+  if(dp>0.4){
+    const va=(dp-0.4)*0.5*(0.7+Math.sin(frame*0.1)*0.3);
+    const eg=ctx.createLinearGradient(0,0,GW*0.12,0);
+    eg.addColorStop(0,`rgba(200,30,30,${va})`);eg.addColorStop(1,'rgba(200,30,30,0)');
+    ctx.fillStyle=eg;ctx.fillRect(0,0,GW*0.12,GH);
+  }
+
+  if(flashAlpha>0){ctx.fillStyle=`rgba(255,50,50,${flashAlpha})`;ctx.fillRect(0,0,GW,GH);}
+}
+
+function drawCountdown() {
+  const prog=countdownT/50;
+  ctx.fillStyle=`rgba(20,10,40,${0.45-prog*0.25})`;ctx.fillRect(0,0,GW,GH);
+
+  ctx.save();
+  ctx.translate(GW/2,GH*0.4);
+  const sc=1+(1-prog)*0.4;
+  ctx.scale(sc,sc); ctx.globalAlpha=1-prog*0.3;
+  ctx.font='bold 72px Arial,sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+  ctx.shadowColor='#AA55FF';ctx.shadowBlur=25;
+  ctx.fillStyle='#FFF';ctx.fillText(countdownVal>0?countdownVal+'':'FUJA!',0,0);
+  ctx.shadowBlur=0;
+  ctx.restore();ctx.globalAlpha=1;
+}
+
+function drawMenu() {
+  drawBG();
+  ctx.fillStyle='rgba(15,8,30,0.75)';ctx.fillRect(0,0,GW,GH);
+
+  const t=Date.now()*0.002;
+
+  // Title
+  ctx.font='bold 52px Arial,sans-serif';ctx.textAlign='center';
+  ctx.shadowColor='#BB66FF';ctx.shadowBlur=22;ctx.fillStyle='#F0E0FF';
+  ctx.fillText('IMUNO RUN',GW/2,GH*0.16);ctx.shadowBlur=0;
+
+  ctx.font='bold 18px Arial,sans-serif';ctx.fillStyle='#CC99FF';
+  ctx.fillText('Fuga Bacteriana',GW/2,GH*0.16+40);
+
+  // Macrophage preview
+  ctx.save();ctx.translate(GW*0.33,GH*0.44);ctx.scale(1.5,1.5);
+  for(let i=0;i<5;i++){const a=(i/5)*Math.PI*2+t*0.5,l=20+Math.sin(t+i)*3;
+    ctx.beginPath();ctx.ellipse(Math.cos(a)*l,Math.sin(a)*l,5,4,a,0,Math.PI*2);ctx.fillStyle='#7744AA';ctx.fill();}
+  ctx.beginPath();ctx.ellipse(0,0,20,16,0,0,Math.PI*2);ctx.fillStyle='#9955BB';ctx.fill();ctx.strokeStyle='#663399';ctx.lineWidth=1.5;ctx.stroke();
+  ctx.beginPath();ctx.arc(-5,-3,3.5,0,Math.PI*2);ctx.fillStyle='#FFF0F0';ctx.fill();
+  ctx.beginPath();ctx.arc(-4,-2,1.8,0,Math.PI*2);ctx.fillStyle='#CC0000';ctx.fill();
+  ctx.beginPath();ctx.arc(5,-3,3.5,0,Math.PI*2);ctx.fillStyle='#FFF0F0';ctx.fill();
+  ctx.beginPath();ctx.arc(6,-2,1.8,0,Math.PI*2);ctx.fillStyle='#CC0000';ctx.fill();
+  ctx.strokeStyle='#553399';ctx.lineWidth=2;
+  ctx.beginPath();ctx.moveTo(-10,-7);ctx.lineTo(-1,-5);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(10,-7);ctx.lineTo(1,-5);ctx.stroke();
+  ctx.restore();
+
+  // Arrow
+  ctx.strokeStyle='#FF6666';ctx.lineWidth=3;
+  ctx.beginPath();ctx.moveTo(GW*0.43,GH*0.44);ctx.lineTo(GW*0.50,GH*0.44);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(GW*0.50,GH*0.44);ctx.lineTo(GW*0.48,GH*0.42);
+  ctx.moveTo(GW*0.50,GH*0.44);ctx.lineTo(GW*0.48,GH*0.46);ctx.stroke();
+
+  // Bacterium preview
+  ctx.save();ctx.translate(GW*0.6,GH*0.44);ctx.scale(1.5,1.5);
+  ctx.strokeStyle='#55AA55';ctx.lineWidth=2;ctx.beginPath();
+  for(let i=0;i<12;i++){const f=i/11,fx=-16-f*12,fy=Math.sin(t*3+f*4)*(3+f*4);if(i===0)ctx.moveTo(fx,fy);else ctx.lineTo(fx,fy);}
+  ctx.stroke();
+  ctx.beginPath();ctx.ellipse(0,0,16,11,0,0,Math.PI*2);ctx.fillStyle='#66CC66';ctx.fill();
+  ctx.strokeStyle='#338833';ctx.lineWidth=1.5;ctx.stroke();
+  ctx.beginPath();ctx.arc(-4,-2.5,3,0,Math.PI*2);ctx.fillStyle='white';ctx.fill();
+  ctx.beginPath();ctx.arc(-3,-1.5,1.5,0,Math.PI*2);ctx.fillStyle='#222';ctx.fill();
+  ctx.beginPath();ctx.arc(4,-2.5,3,0,Math.PI*2);ctx.fillStyle='white';ctx.fill();
+  ctx.beginPath();ctx.arc(5,-1.5,1.5,0,Math.PI*2);ctx.fillStyle='#222';ctx.fill();
+  ctx.beginPath();ctx.arc(0,3,3,0.1,Math.PI-0.1);ctx.strokeStyle='#338833';ctx.lineWidth=1.5;ctx.stroke();
+  ctx.restore();
+
+  // Labels
+  ctx.font='bold 12px Arial,sans-serif';ctx.textAlign='center';
+  ctx.fillStyle='#CC99FF';ctx.fillText('Macrófago',GW*0.33,GH*0.44+38);
+  ctx.fillStyle='#88DD88';ctx.fillText('Bactéria (você)',GW*0.6,GH*0.44+38);
+
+  // Description
+  ctx.font='12px Arial,sans-serif';ctx.fillStyle='#DDBBFF';
+  ctx.fillText('Você é uma bactéria que invadiu o tecido. O macrófago está te perseguindo!',GW/2,GH*0.6);
+  ctx.fillText('Desvie dos componentes do sistema imune para sobreviver.',GW/2,GH*0.6+18);
+
+  // Controls
+  ctx.font='bold 13px Arial,sans-serif';ctx.fillStyle='#FFDD88';
+  const mob='ontouchstart' in window;
+  if(mob) ctx.fillText('TOQUE = Pular     DESLIZE = Abaixar',GW/2,GH*0.74);
+  else    ctx.fillText('ESPAÇO / ↑ = Pular     ↓ = Abaixar',GW/2,GH*0.74);
+
+  ctx.font='11px Arial,sans-serif';ctx.fillStyle='#44DDBB';
+  ctx.fillText('Colete o Biofilme para ganhar um escudo protetor!',GW/2,GH*0.74+20);
+
+  // Start
+  ctx.font='bold 18px Arial,sans-serif';
+  const bl=Math.sin(Date.now()*0.004)*0.5+0.5;
+  ctx.fillStyle=`rgba(255,255,255,${0.5+bl*0.5})`;
+  ctx.fillText(mob?'TOQUE PARA JOGAR':'PRESSIONE ESPAÇO PARA JOGAR',GW/2,GH*0.91);
+
+  if(highScore>0){ctx.font='12px Arial,sans-serif';ctx.fillStyle='#AA88CC';ctx.fillText('Recorde: '+highScore+'m',GW/2,GH*0.97);}
+}
+
+function drawGameOver() {
+  ctx.fillStyle='rgba(15,5,25,0.85)';ctx.fillRect(0,0,GW,GH);
+
+  ctx.font='bold 42px Arial,sans-serif';ctx.textAlign='center';
+  ctx.shadowColor='#FF2222';ctx.shadowBlur=18;ctx.fillStyle='#FF5555';
+  ctx.fillText('FAGOCITADO!',GW/2,GH*0.12);ctx.shadowBlur=0;
+
+  ctx.font='12px Arial,sans-serif';ctx.fillStyle='#DDAAAA';
+  ctx.fillText('O macrófago englobou a bactéria por fagocitose!',GW/2,GH*0.12+32);
+
+  ctx.font="bold 24px 'Courier New',monospace";ctx.fillStyle='#FFF';
+  ctx.fillText('Distância: '+score+'m',GW/2,GH*0.3);
+
+  let nextY=GH*0.3+25;
+  if(bestStreak>=3){ctx.font='12px Arial,sans-serif';ctx.fillStyle='#FFAA44';ctx.fillText('Melhor combo: '+bestStreak+'x',GW/2,nextY);nextY+=18;}
+
+  if(score>=highScore&&score>0){
+    ctx.font='bold 16px Arial,sans-serif';ctx.fillStyle='#FFD700';
+    ctx.shadowColor='#FFD700';ctx.shadowBlur=8;ctx.fillText('NOVO RECORDE!',GW/2,nextY+5);ctx.shadowBlur=0;
+  } else if(highScore>0){
+    ctx.font='12px Arial,sans-serif';ctx.fillStyle='#AA88CC';ctx.fillText('Recorde: '+highScore+'m',GW/2,nextY+5);
+  }
+
+  // Fact box
+  const fy=GH*0.48,fh=GH*0.28;
+  ctx.fillStyle='rgba(40,20,80,0.4)';ctx.beginPath();ctx.roundRect(GW*0.08,fy-8,GW*0.84,fh,8);ctx.fill();
+  ctx.strokeStyle='rgba(136,221,255,0.25)';ctx.lineWidth=1;ctx.beginPath();ctx.roundRect(GW*0.08,fy-8,GW*0.84,fh,8);ctx.stroke();
+
+  ctx.font='bold 14px Arial,sans-serif';ctx.fillStyle='#88DDFF';ctx.fillText('Você sabia?',GW/2,fy+12);
+
+  ctx.font='12px Arial,sans-serif';ctx.fillStyle='#CCDDFF';
+  const mxW=GW*0.75, fact=facts[score%facts.length];
+  const words=fact.split(' '); let ls=[],cl='';
+  for(const w of words){const tt=cl?cl+' '+w:w;if(ctx.measureText(tt).width>mxW){ls.push(cl);cl=w;}else cl=tt;}
+  if(cl)ls.push(cl);
+  for(let i=0;i<ls.length;i++) ctx.fillText(ls[i],GW/2,fy+30+i*17);
+
+  ctx.font='bold 16px Arial,sans-serif';
+  const bl2=Math.sin(Date.now()*0.004)*0.5+0.5;
+  ctx.fillStyle=`rgba(255,255,255,${0.5+bl2*0.5})`;
+  const mob='ontouchstart' in window;
+  ctx.fillText(mob?'TOQUE PARA JOGAR NOVAMENTE':'ESPAÇO PARA JOGAR NOVAMENTE',GW/2,GH*0.9);
+}
+
+// --- RENDER ---
+function render() {
+  ctx.clearRect(0,0,GW,GH);
+  if(state==='menu'){drawMenu();return;}
+
+  ctx.save();
+  if(shakeTimer>0){const i=shakeTimer*1.2;ctx.translate((Math.random()-0.5)*i,(Math.random()-0.5)*i);}
+
+  drawBG(); drawDust();
+  for(const p of powerUps) drawPU(p);
+  for(const o of obstacles) drawObs(o);
+  drawMacro(); drawBact(); drawParts(); drawTexts();
+
+  ctx.restore();
+
+  if(state==='playing'||state==='dying') drawUI();
+  if(state==='countdown'){drawUI();drawCountdown();}
+  if(state==='gameover') drawGameOver();
+}
+
+// --- ACTIONS ---
+function startGame() { initAudio(); initGame(); state='countdown'; countdownVal=3; countdownT=0; sndCount(); }
+
+function doJump() {
+  if(state!=='playing'||!player.grounded||player.ducking) return;
+  player.vy=JUMP_FORCE; player.grounded=false; player.jumping=true;
+  sndJump();
+  for(let i=0;i<3;i++) addDust(player.x+player.w*0.3,GROUND_Y);
+}
+
+function doDuck() {
+  if(state!=='playing'||!player.grounded||player.ducking) return;
+  player.ducking=true; player.duckTimer=25; player.h=DUCK_H; player.y=GROUND_Y-DUCK_H;
+  sndSlide();
+}
+
+// --- INPUT ---
+let touchSY=0, touchST=0;
+
+canvas.addEventListener('touchstart',(e)=>{
+  e.preventDefault();
+  touchSY=e.touches[0].clientY; touchST=Date.now();
+  if(state==='menu'){startGame();return;}
+  if(state==='gameover'&&Date.now()-gameOverTime>600){startGame();return;}
+},{passive:false});
+
+canvas.addEventListener('touchmove',(e)=>{e.preventDefault();},{passive:false});
+
+canvas.addEventListener('touchend',(e)=>{
+  e.preventDefault();
+  if(state!=='playing') return;
+  const dy=e.changedTouches[0].clientY-touchSY;
+  const dt=Date.now()-touchST;
+  if(dy>30&&dt<300) doDuck(); else doJump();
+},{passive:false});
+
+document.addEventListener('keydown',(e)=>{
+  if(e.code==='Space'||e.code==='ArrowUp'){
+    e.preventDefault();
+    if(state==='menu'){startGame();return;}
+    if(state==='gameover'){startGame();return;}
+    doJump();
+  }
+  if(e.code==='ArrowDown'){e.preventDefault();doDuck();}
+});
+
+canvas.addEventListener('mousedown',(e)=>{
+  if(e.button!==0)return;
+  if(state==='menu'){startGame();return;}
+  if(state==='gameover'){startGame();return;}
+  doJump();
+});
+canvas.addEventListener('contextmenu',(e)=>{e.preventDefault();doDuck();});
+
+// --- MAIN LOOP (fixed timestep) ---
+function gameLoop(timestamp) {
+  if(lastTimestamp===0) lastTimestamp=timestamp;
+  accumulator += timestamp - lastTimestamp;
+  lastTimestamp = timestamp;
+  if(accumulator > FRAME_TIME*5) accumulator = FRAME_TIME*5; // prevent spiral
+
+  while(accumulator >= FRAME_TIME) {
+    update();
+    accumulator -= FRAME_TIME;
+  }
+
+  render();
+  requestAnimationFrame(gameLoop);
+}
+
+initGame();
+state='menu';
+requestAnimationFrame(gameLoop);
+</script>
+</body>
+</html>

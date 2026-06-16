@@ -1,0 +1,1536 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Jogo do Fagócito</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box;}
+    html,body{width:100%;height:100%;overflow:hidden;background:#2A0A1E;
+      touch-action:none;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none;}
+    canvas{display:block;width:100%;height:100%;}
+  </style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<script>
+const canvas=document.getElementById('game'), ctx=canvas.getContext('2d');
+const GW=800, GH=450;
+canvas.width=GW; canvas.height=GH;
+
+const WORLD_W=1600, WORLD_H=1100;
+const CELL_SIZE=65;
+const FPS=60, FT=1000/FPS;
+let lastTS=0, accum=0;
+
+// Audio
+let audioCtx=null;
+function initAudio(){if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)();if(audioCtx.state==='suspended')audioCtx.resume();}
+function snd(f,d,t='square',v=0.07){if(!audioCtx)return;try{const o=audioCtx.createOscillator(),g=audioCtx.createGain();o.type=t;o.frequency.value=f;g.gain.value=v;o.connect(g);g.connect(audioCtx.destination);o.start();g.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+d);o.stop(audioCtx.currentTime+d);}catch(e){}}
+function sndEat(){snd(300,0.1,'sine',0.08);setTimeout(()=>snd(450,0.12,'sine',0.06),60);setTimeout(()=>snd(600,0.08,'sine',0.05),120);}
+function sndBite(){snd(200,0.08,'triangle',0.07);snd(150,0.1,'square',0.04);}
+function sndHurt(){snd(80,0.3,'sawtooth',0.09);}
+function sndNewType(){snd(523,0.12,'sine',0.08);setTimeout(()=>snd(659,0.12,'sine',0.07),100);setTimeout(()=>snd(784,0.15,'sine',0.07),200);}
+function sndDie(){snd(300,0.3,'square',0.08);setTimeout(()=>snd(200,0.3,'square',0.08),200);setTimeout(()=>snd(100,0.5,'sawtooth',0.1),400);}
+function sndPower(){snd(523,0.15,'sine',0.1);setTimeout(()=>snd(659,0.15,'sine',0.09),120);setTimeout(()=>snd(784,0.15,'sine',0.09),240);setTimeout(()=>snd(1047,0.25,'sine',0.1),360);}
+function sndHazardWarn(){snd(120,0.4,'sawtooth',0.1);setTimeout(()=>snd(100,0.4,'sawtooth',0.1),300);}
+function sndHazardHit(){snd(60,0.4,'sawtooth',0.12);snd(90,0.3,'square',0.08);}
+function sndRepair(){snd(400,0.1,'sine',0.06);setTimeout(()=>snd(500,0.1,'sine',0.05),80);setTimeout(()=>snd(600,0.08,'sine',0.04),160);}
+
+// Character configs
+const CHAR_CONFIG={
+  M1:{
+    name:'Macrófago M1', desc:'Modo Fagocitose',
+    detail:'Come bactérias, cresce ao comer, fica mais lento.',
+    color:'#9955CC', dark:'#7744AA', light:'#CC99EE',
+    bodyColors:['#CC99EE','#9966BB','#7744AA'],
+    pseudoCol:'rgba(130,70,180,0.7)',
+    eyeCol:'#660066', nucleusCol:'rgba(50,20,80,0.35)',
+    speed:2.6, radius:26, hpMax:100, hpDrain:0.02,
+    cytokine:'TNF-α', cytokineDesc:'Speed boost + raio maior',
+    deathMsg:'APOPTOSE!', deathDesc:'O macrófago não conseguiu manter sua energia e entrou em apoptose.',
+    scoreLabel:'fagocitados', grows:true,
+    uiAccent:'#CC88FF', uiDark:'rgba(100,50,150,0.5)',
+  },
+  NEUTRO:{
+    name:'Neutrófilo', desc:'Modo Ataque Rápido',
+    detail:'Mais rápido, menor, vida drena rápido. Curta duração!',
+    color:'#4488DD', dark:'#2266AA', light:'#88BBFF',
+    bodyColors:['#88BBFF','#5599DD','#3377BB'],
+    pseudoCol:'rgba(60,100,200,0.7)',
+    eyeCol:'#003366', nucleusCol:'rgba(20,40,80,0.35)',
+    speed:3.2, radius:22, hpMax:100, hpDrain:0.035,
+    cytokine:'IL-8', cytokineDesc:'Burst respiratório AoE',
+    deathMsg:'NETOSE!', deathDesc:'O neutrófilo liberou NETs e formou pus.',
+    scoreLabel:'fagocitados', grows:false,
+    uiAccent:'#66AAFF', uiDark:'rgba(50,80,150,0.5)',
+  },
+  M2:{
+    name:'Macrófago M2', desc:'Modo Reparo Tecidual',
+    detail:'Repara tecidos danificados. Mais lento, mais resistente.',
+    color:'#44AA88', dark:'#228866', light:'#88DDBB',
+    bodyColors:['#88DDBB','#55BB99','#339977'],
+    pseudoCol:'rgba(60,170,130,0.7)',
+    eyeCol:'#004433', nucleusCol:'rgba(20,60,50,0.35)',
+    speed:2.2, radius:26, hpMax:130, hpDrain:0.018,
+    cytokine:'IL-10', cytokineDesc:'Aura de cura + regeneração',
+    deathMsg:'APOPTOSE!', deathDesc:'Reparo incompleto - O macrófago M2 não conseguiu reparar o tecido a tempo.',
+    scoreLabel:'reparados', grows:false,
+    uiAccent:'#66DDAA', uiDark:'rgba(50,150,100,0.5)',
+  }
+};
+
+// State
+let state='menu';
+let charType='M1';
+let frame=0, gameOverTime=0;
+let highScore=parseInt(localStorage.getItem('fagocito_hs')||'0');
+let selectHover=-1; // which card is hovered in select screen
+
+// Player
+let P={};
+let camX=0, camY=0;
+let targetX=WORLD_W/2, targetY=WORLD_H/2;
+let touching=false;
+let shakeX=0, shakeY=0, shakeTime=0;
+
+// Game arrays
+let bacteria=[];
+let targets=[]; // M2 repair targets
+let hazards=[]; // protozoan enemies
+let particles=[];
+let texts=[];
+let phagosomes=[];
+let alerts=[];
+
+// Bacteria types
+const TYPES={
+  COCCUS:    {name:'Coccus (Staphylococcus)',  short:'Coccus',   col:'#55CC55',dk:'#338833',r:9, spd:0.5, flee:0,   fforce:0,  pts:1, hp:5,  shape:'circle'},
+  BACILLUS:  {name:'Bacilo (Escherichia coli)', short:'Bacilo',   col:'#4499DD',dk:'#336699',r:7, spd:0.9, flee:90,  fforce:0.4,pts:2, hp:8,  shape:'rod'},
+  SPIRILLUM: {name:'Espiroqueta (Treponema)',   short:'Espiroqueta',col:'#EE5544',dk:'#AA3322',r:6, spd:1.7, flee:140, fforce:0.7,pts:4, hp:3,  shape:'spiral'},
+  CAPSULADO: {name:'Pneumococo (encapsulado)',  short:'Capsulado',col:'#FFAA33',dk:'#BB7711',r:11,spd:0.3, flee:0,   fforce:0,  pts:6, hp:15, shape:'capsule', hits:2},
+};
+
+// M2 target types
+const TARGET_TYPES={
+  DETRITO:   {name:'Detrito Celular',   short:'Detrito',  col:'#888888',dk:'#555555',r:10,spd:0,   pts:1,hits:1,shape:'debris'},
+  NECROSE:   {name:'Tecido Necrótico',  short:'Necrose',  col:'#884433',dk:'#552211',r:14,spd:0,   pts:3,hits:2,shape:'necrotic'},
+  APOPTOSE:  {name:'Célula Apoptótica', short:'Apoptótica',col:'#DD8833',dk:'#AA6611',r:11,spd:0.3,pts:2,hits:1,shape:'apoptotic'},
+  FIBROSE:   {name:'Fibrose',           short:'Fibrose',  col:'#CCAA44',dk:'#997722',r:16,spd:0,   pts:5,hits:3,shape:'fibrosis'},
+};
+
+// Milestone intro messages
+const introMsgs={
+  BACILLUS: 'NOVO: Bacilos! Bactérias que fogem de você.',
+  SPIRILLUM:'NOVO: Espiroquetas! Rápidas e evasivas.',
+  CAPSULADO:'NOVO: Pneumococos! Cápsula protege da fagocitose. Precisa 2 contatos!',
+};
+const introMsgsM2={
+  NECROSE:  'NOVO: Tecido Necrótico! Precisa 2 toques para reparar.',
+  APOPTOSE: 'NOVO: Células Apoptóticas! Elas se movem devagar.',
+  FIBROSE:  'NOVO: Fibrose! Grande, precisa 3 toques e vale 5 pontos!',
+};
+let introduced={};
+
+// Facts per character
+const factsM1=[
+  "A fagocitose começa com o reconhecimento do patógeno via receptores PRR (como TLRs).",
+  "Pseudópodes são extensões do citoplasma que envolvem o patógeno durante a fagocitose.",
+  "O fagossomo se funde com lisossomos formando o fagolisossomo, onde ocorre a digestão.",
+  "Bactérias encapsuladas resistem à fagocitose — a cápsula impede a aderência do macrófago.",
+  "A opsonização por anticorpos e complemento facilita o reconhecimento e a fagocitose.",
+  "Macrófagos M1 são ativados pela via clássica e produzem citocinas pró-inflamatórias como TNF-α.",
+  "Após digerir o patógeno, o macrófago apresenta antígenos via MHC II aos linfócitos T.",
+  "TNF-α é uma citocina que aumenta a permeabilidade vascular e recruta mais células imunes.",
+  "O burst respiratório gera espécies reativas de oxigênio que destroem o patógeno no fagolisossomo.",
+  "Bactérias como Mycobacterium tuberculosis podem sobreviver dentro do macrófago.",
+];
+const factsNeutro=[
+  "Neutrófilos são os leucócitos mais abundantes no sangue, representando 60-70% dos glóbulos brancos.",
+  "Neutrófilos vivem apenas 5-90 horas nos tecidos — são células de vida curta e agressiva.",
+  "A NETose é quando o neutrófilo libera seu DNA como uma rede (NET) para capturar patógenos.",
+  "O pus é formado principalmente por neutrófilos mortos acumulados no local da infecção.",
+  "IL-8 (CXCL8) é a principal quimiocina que recruta neutrófilos para o local da infecção.",
+  "Neutrófilos têm núcleo multilobado (3-5 lóbulos), por isso são chamados polimorfonucleares.",
+  "O burst respiratório do neutrófilo produz superóxido, peróxido de hidrogênio e ácido hipocloroso.",
+  "Neutrófilos são as primeiras células a chegar ao local de infecção (em minutos!).",
+  "Grânulos azurófilos do neutrófilo contêm mieloperoxidase, defensinas e lisozima.",
+  "Neutrófilos podem fagocitar 5-20 bactérias antes de morrer por exaustão.",
+];
+const factsM2=[
+  "Macrófagos M2 são ativados pela via alternativa (IL-4, IL-13) e promovem reparo tecidual.",
+  "IL-10 é uma citocina anti-inflamatória que suprime a resposta imune excessiva.",
+  "M2 produzem fatores de crescimento como TGF-β que estimulam a regeneração do tecido.",
+  "A resolução da inflamação depende da mudança de macrófagos M1 para M2 (repolarização).",
+  "Macrófagos M2 fagocitam células apoptóticas (eferocitose) para limpar o tecido.",
+  "A fibrose ocorre quando o reparo tecidual é excessivo, com deposição exagerada de colágeno.",
+  "M2 secretam arginase, que converte arginina em ornitina para síntese de colágeno.",
+  "A polarização M1/M2 é um espectro — macrófagos podem ter fenótipos intermediários.",
+  "Macrófagos residentes nos tecidos ajudam a manter a homeostase e reparar danos diários.",
+  "Defeitos na resolução da inflamação (M2) podem levar a inflamação crônica e autoimunidade.",
+];
+
+function getFacts(){
+  if(charType==='NEUTRO') return factsNeutro;
+  if(charType==='M2') return factsM2;
+  return factsM1;
+}
+
+function init(){
+  frame=0;
+  const cfg=CHAR_CONFIG[charType];
+  P={x:WORLD_W/2,y:WORLD_H/2,r:cfg.radius,baseR:cfg.radius,spd:cfg.speed,
+     hp:cfg.hpMax,maxHp:cfg.hpMax,
+     eaten:0,pseudo:0,moveAngle:0,moving:false,
+     power:0,powerName:'',
+     knockX:0,knockY:0,damageFlash:0,
+     lastPowerMilestone:0};
+  targetX=P.x; targetY=P.y; touching=false;
+  shakeX=0;shakeY=0;shakeTime=0;
+  bacteria=[]; targets=[]; hazards=[];
+  particles=[]; texts=[]; phagosomes=[]; alerts=[];
+
+  if(charType==='M2'){
+    introduced={DETRITO:true,NECROSE:false,APOPTOSE:false,FIBROSE:false};
+    for(let i=0;i<8;i++) spawnTarget('DETRITO');
+  } else {
+    introduced={COCCUS:true,BACILLUS:false,SPIRILLUM:false,CAPSULADO:false};
+    for(let i=0;i<8;i++) spawnBact('COCCUS');
+  }
+}
+
+function spawnBact(type){
+  const t=TYPES[type];
+  let x,y,tries=0;
+  do {
+    x=t.r+Math.random()*(WORLD_W-t.r*2);
+    y=t.r+Math.random()*(WORLD_H-t.r*2);
+    tries++;
+  } while(tries<20 && dist(x,y,P.x,P.y)<150);
+  bacteria.push({
+    x,y,type,cfg:t,
+    vx:(Math.random()-0.5)*t.spd,
+    vy:(Math.random()-0.5)*t.spd,
+    r:t.r, hp:1,
+    capsule: type==='CAPSULADO'?2:0,
+    wobble:Math.random()*Math.PI*2,
+    eating:false, eatTimer:0,
+    flash:0,
+  });
+}
+
+function spawnTarget(type){
+  const t=TARGET_TYPES[type];
+  let x,y,tries=0;
+  do {
+    x=t.r+Math.random()*(WORLD_W-t.r*2);
+    y=t.r+Math.random()*(WORLD_H-t.r*2);
+    tries++;
+  } while(tries<20 && dist(x,y,P.x,P.y)<150);
+  targets.push({
+    x,y,type,cfg:t,
+    vx: t.spd>0?(Math.random()-0.5)*t.spd:0,
+    vy: t.spd>0?(Math.random()-0.5)*t.spd:0,
+    r:t.r, hp:1,
+    hitsLeft:t.hits,
+    wobble:Math.random()*Math.PI*2,
+    repairing:false, repairTimer:0,
+    flash:0, angle:Math.random()*Math.PI*2,
+  });
+}
+
+function spawnHazard(type){
+  const edge=Math.floor(Math.random()*4);
+  let x,y;
+  if(edge===0){x=Math.random()*WORLD_W;y=-20;}
+  else if(edge===1){x=WORLD_W+20;y=Math.random()*WORLD_H;}
+  else if(edge===2){x=Math.random()*WORLD_W;y=WORLD_H+20;}
+  else{x=-20;y=Math.random()*WORLD_H;}
+
+  const spd=type==='TOXO'?1.5:2.0;
+  const r=type==='TOXO'?12:8;
+  const dmg=type==='TOXO'?40:30;
+  const name=type==='TOXO'?'Toxoplasma gondii':'Leishmania';
+  const col=type==='TOXO'?'#BB9933':'#336633';
+  const dk=type==='TOXO'?'#886622':'#224422';
+
+  hazards.push({
+    x,y,type,name,col,dk,r,spd,dmg,
+    life:1800, // 30 seconds
+    wobble:Math.random()*Math.PI*2,
+    trail:[],
+  });
+  addAlert('PERIGO: '+name+' detectado!','#FF4444');
+  sndHazardWarn();
+}
+
+function dist(x1,y1,x2,y2){return Math.sqrt((x2-x1)**2+(y2-y1)**2);}
+
+function addP(x,y,col,n=6,sp=4){
+  for(let i=0;i<n;i++) particles.push({x,y,vx:(Math.random()-0.5)*sp,vy:(Math.random()-0.5)*sp,
+    life:1,decay:0.02+Math.random()*0.02,r:2+Math.random()*3,col});
+}
+function addText(x,y,txt,col='#FFF',sz=13){texts.push({x,y,txt,col,sz,life:1,vy:-1});}
+function addAlert(msg,col='#FFDD44'){alerts.push({msg,col,life:1,y:GH*0.2});}
+
+// --- POWER SYSTEM ---
+function activatePower(){
+  const cfg=CHAR_CONFIG[charType];
+  P.power=600; // 10 seconds
+  P.powerName=cfg.cytokine;
+  addAlert('PODER DESBLOQUEADO! '+cfg.cytokine+'!','#FFD700');
+  sndPower();
+}
+
+// --- UPDATE ---
+function update(){
+  if(state!=='playing') return;
+  frame++;
+
+  // Screen shake
+  if(shakeTime>0){
+    shakeTime--;
+    shakeX=(Math.random()-0.5)*shakeTime*0.5;
+    shakeY=(Math.random()-0.5)*shakeTime*0.5;
+  } else { shakeX=0;shakeY=0; }
+
+  // Damage flash
+  if(P.damageFlash>0) P.damageFlash--;
+
+  // Knockback decay
+  P.knockX*=0.85; P.knockY*=0.85;
+
+  // Player movement
+  if(touching||(!('ontouchstart' in window))){
+    const dx=targetX-P.x, dy=targetY-P.y;
+    const d=Math.sqrt(dx*dx+dy*dy);
+    let spd=P.spd;
+    // Power speed boost for M1
+    if(charType==='M1' && P.power>0) spd*=1.4;
+    if(d>3){
+      P.x+=dx/d*spd+P.knockX; P.y+=dy/d*spd+P.knockY;
+      P.moveAngle=Math.atan2(dy,dx);
+      P.moving=true;
+    } else {
+      P.x+=P.knockX; P.y+=P.knockY;
+      P.moving=false;
+    }
+  } else {
+    P.x+=P.knockX; P.y+=P.knockY;
+    P.moving=false;
+  }
+
+  // Clamp to world
+  P.x=Math.max(P.r,Math.min(WORLD_W-P.r,P.x));
+  P.y=Math.max(P.r,Math.min(WORLD_H-P.r,P.y));
+
+  P.pseudo+=0.06;
+
+  const cfg=CHAR_CONFIG[charType];
+
+  // Growth (only M1)
+  if(cfg.grows){
+    P.r=cfg.radius+Math.min(14,P.eaten*0.25);
+    P.spd=Math.max(1.8, cfg.speed-P.eaten*0.008);
+  } else {
+    P.r=cfg.radius;
+    P.spd=cfg.speed;
+  }
+  // Power radius boost for M1
+  if(charType==='M1' && P.power>0) P.r*=1.3;
+  // Power radius boost for M2
+  if(charType==='M2' && P.power>0) P.r*=1.5;
+
+  // Health drain
+  let drain=cfg.hpDrain+P.eaten*0.0003;
+  // M2 IL-10 regen
+  if(charType==='M2' && P.power>0){
+    P.hp=Math.min(P.maxHp,P.hp+0.5);
+    drain=0;
+  }
+  P.hp-=drain;
+
+  // Power countdown
+  if(P.power>0){
+    P.power--;
+    // Neutro IL-8 AoE burst
+    if(charType==='NEUTRO' && frame%10===0){
+      const aoR=120;
+      for(const b of bacteria){
+        if(b.eating) continue;
+        const d2=dist(b.x,b.y,P.x,P.y);
+        if(d2<aoR){
+          b.hp=0;
+          P.eaten++;
+          P.hp=Math.min(P.maxHp,P.hp+b.cfg.hp*0.5);
+          addP(b.x,b.y,b.cfg.col,8,4);
+          addText(b.x,b.y-10,'+'+b.cfg.pts,'#66AAFF',12);
+          sndEat();
+        }
+      }
+      bacteria=bacteria.filter(b=>b.hp>0);
+      // Shockwave particles
+      for(let a=0;a<Math.PI*2;a+=0.3){
+        particles.push({x:P.x+Math.cos(a)*aoR*0.5,y:P.y+Math.sin(a)*aoR*0.5,
+          vx:Math.cos(a)*2,vy:Math.sin(a)*2,life:0.5,decay:0.05,r:3,col:'rgba(100,170,255,0.6)'});
+      }
+    }
+    // M2 IL-10 healing particles
+    if(charType==='M2' && frame%8===0){
+      const a=Math.random()*Math.PI*2;
+      particles.push({x:P.x+Math.cos(a)*P.r,y:P.y+Math.sin(a)*P.r,
+        vx:Math.cos(a)*-1,vy:Math.sin(a)*-1,life:0.8,decay:0.04,r:3,col:'#66FFAA'});
+    }
+  }
+
+  if(P.hp<=0){
+    P.hp=0; state='gameover'; gameOverTime=Date.now();
+    if(P.eaten>highScore){highScore=P.eaten;localStorage.setItem('fagocito_hs',highScore+'');}
+    sndDie(); return;
+  }
+
+  // --- M2 target logic ---
+  if(charType==='M2'){
+    updateM2Targets();
+  } else {
+    updateBacteria();
+  }
+
+  // --- Hazards (protozoa) ---
+  updateHazards();
+
+  // Phagosomes inside player
+  for(let i=phagosomes.length-1;i>=0;i--){
+    phagosomes[i].life--; phagosomes[i].r*=0.99;
+    if(phagosomes[i].life<=0) phagosomes.splice(i,1);
+  }
+
+  // Particles
+  for(let i=particles.length-1;i>=0;i--){
+    const p=particles[i]; p.x+=p.vx;p.y+=p.vy;p.vx*=0.96;p.vy*=0.96;p.life-=p.decay;
+    if(p.life<=0) particles.splice(i,1);
+  }
+  for(let i=texts.length-1;i>=0;i--){
+    texts[i].y+=texts[i].vy; texts[i].life-=0.012;
+    if(texts[i].life<=0) texts.splice(i,1);
+  }
+  for(let i=alerts.length-1;i>=0;i--){
+    alerts[i].life-=0.006;
+    if(alerts[i].life<=0) alerts.splice(i,1);
+  }
+
+  // Camera
+  camX+=(P.x-GW/2-camX)*0.08;
+  camY+=(P.y-GH/2-camY)*0.08;
+  camX=Math.max(0,Math.min(WORLD_W-GW,camX));
+  camY=Math.max(0,Math.min(WORLD_H-GH,camY));
+}
+
+function updateBacteria(){
+  const e=P.eaten;
+  const maxBact=Math.min(35,8+Math.floor(e*0.5));
+  if(bacteria.filter(b=>!b.eating).length<maxBact && frame%40===0){
+    let type='COCCUS';
+    if(e>=30) type=['COCCUS','BACILLUS','SPIRILLUM','CAPSULADO'][Math.floor(Math.random()*4)];
+    else if(e>=15) type=['COCCUS','BACILLUS','SPIRILLUM'][Math.floor(Math.random()*3)];
+    else if(e>=5) type=['COCCUS','BACILLUS'][Math.floor(Math.random()*2)];
+    if(!introduced[type]&&introMsgs[type]){introduced[type]=true;addAlert(introMsgs[type]);sndNewType();}
+    spawnBact(type);
+  }
+
+  for(const b of bacteria){
+    if(b.eating){
+      b.eatTimer++;
+      b.x+=(P.x-b.x)*0.12; b.y+=(P.y-b.y)*0.12;
+      b.r=b.cfg.r*(1-b.eatTimer/30*0.8);
+      if(b.eatTimer>=30){
+        b.hp=0;
+        P.eaten++; P.hp=Math.min(P.maxHp,P.hp+b.cfg.hp);
+        addP(P.x,P.y,b.cfg.col,10,3);
+        addText(b.x,b.y-15,'+'+b.cfg.pts,b.cfg.col,14);
+        phagosomes.push({ox:(Math.random()-0.5)*P.r*0.5,oy:(Math.random()-0.5)*P.r*0.5,
+          r:4,life:90,col:b.cfg.col});
+        sndEat();
+        checkPowerMilestone();
+        const facts=getFacts();
+        if(P.eaten%10===0 && P.eaten>0) addText(P.x,P.y-P.r-20,facts[P.eaten/10%facts.length|0],'#88DDFF',9);
+      }
+      continue;
+    }
+
+    b.wobble+=0.08;
+    const d2=dist(b.x,b.y,P.x,P.y);
+    if(b.cfg.flee>0 && d2<b.cfg.flee){
+      const ax=(b.x-P.x)/d2*b.cfg.fforce;
+      const ay=(b.y-P.y)/d2*b.cfg.fforce;
+      b.vx+=ax; b.vy+=ay;
+    }
+    if(frame%60===0 && Math.random()<0.3){
+      b.vx+=(Math.random()-0.5)*0.5;
+      b.vy+=(Math.random()-0.5)*0.5;
+    }
+    const spd=Math.sqrt(b.vx*b.vx+b.vy*b.vy);
+    if(spd>b.cfg.spd){b.vx*=b.cfg.spd/spd; b.vy*=b.cfg.spd/spd;}
+    b.x+=b.vx; b.y+=b.vy;
+    if(b.x<b.r){b.x=b.r;b.vx*=-1;}
+    if(b.x>WORLD_W-b.r){b.x=WORLD_W-b.r;b.vx*=-1;}
+    if(b.y<b.r){b.y=b.r;b.vy*=-1;}
+    if(b.y>WORLD_H-b.r){b.y=WORLD_H-b.r;b.vy*=-1;}
+    if(b.flash>0) b.flash--;
+
+    if(d2 < P.r+b.r*0.3){
+      if(b.capsule>1){
+        if(b.flash<=0){
+          b.capsule=1; b.flash=20;
+          addP(b.x,b.y,'#FFDD88',8,5);
+          addText(b.x,b.y-15,'CÁPSULA REMOVIDA!','#FFAA33',11);
+          sndBite();
+          b.vx=(b.x-P.x)/d2*2; b.vy=(b.y-P.y)/d2*2;
+        }
+      } else {
+        b.eating=true; b.eatTimer=0;
+      }
+    }
+  }
+  bacteria=bacteria.filter(b=>b.hp>0);
+}
+
+function updateM2Targets(){
+  const e=P.eaten;
+  const maxT=Math.min(30,8+Math.floor(e*0.4));
+  if(targets.filter(t=>!t.repairing).length<maxT && frame%50===0){
+    let type='DETRITO';
+    if(e>=25) type=['DETRITO','NECROSE','APOPTOSE','FIBROSE'][Math.floor(Math.random()*4)];
+    else if(e>=12) type=['DETRITO','NECROSE','APOPTOSE'][Math.floor(Math.random()*3)];
+    else if(e>=5) type=['DETRITO','NECROSE'][Math.floor(Math.random()*2)];
+    if(!introduced[type]&&introMsgsM2[type]){introduced[type]=true;addAlert(introMsgsM2[type]);sndNewType();}
+    spawnTarget(type);
+  }
+
+  for(const t of targets){
+    if(t.repairing){
+      t.repairTimer++;
+      t.r=t.cfg.r*(1-t.repairTimer/40*0.8);
+      // Green healing particles
+      if(t.repairTimer%5===0) addP(t.x,t.y,'#66FF88',4,2);
+      if(t.repairTimer>=40){
+        t.hp=0;
+        P.eaten++; P.hp=Math.min(P.maxHp,P.hp+3);
+        addP(t.x,t.y,'#66FF88',12,4);
+        addText(t.x,t.y-15,'+'+t.cfg.pts,'#66FFAA',14);
+        sndRepair();
+        checkPowerMilestone();
+        const facts=getFacts();
+        if(P.eaten%10===0 && P.eaten>0) addText(P.x,P.y-P.r-20,facts[P.eaten/10%facts.length|0],'#88DDFF',9);
+      }
+      continue;
+    }
+
+    t.wobble+=0.04;
+    // Move (only apoptotic)
+    if(t.cfg.spd>0){
+      t.x+=t.vx; t.y+=t.vy;
+      if(frame%120===0){t.vx=(Math.random()-0.5)*t.cfg.spd;t.vy=(Math.random()-0.5)*t.cfg.spd;}
+      if(t.x<t.r){t.x=t.r;t.vx*=-1;}
+      if(t.x>WORLD_W-t.r){t.x=WORLD_W-t.r;t.vx*=-1;}
+      if(t.y<t.r){t.y=t.r;t.vy*=-1;}
+      if(t.y>WORLD_H-t.r){t.y=WORLD_H-t.r;t.vy*=-1;}
+    }
+    if(t.flash>0) t.flash--;
+
+    const d2=dist(t.x,t.y,P.x,P.y);
+    let repairR=P.r+t.r*0.3;
+    if(d2<repairR){
+      if(t.hitsLeft>1){
+        if(t.flash<=0){
+          t.hitsLeft--;
+          t.flash=20;
+          addP(t.x,t.y,'#66FF88',6,3);
+          addText(t.x,t.y-15,'REPARANDO... ('+t.hitsLeft+')','#66FFAA',10);
+          sndBite();
+        }
+      } else {
+        t.repairing=true; t.repairTimer=0;
+      }
+    }
+  }
+  targets=targets.filter(t=>t.hp>0);
+}
+
+function updateHazards(){
+  const threshold=charType==='M2'?20:15;
+  if(P.eaten>=threshold){
+    // Toxoplasma
+    if(frame%500===0 && hazards.length<3){
+      spawnHazard('TOXO');
+    }
+    // Leishmania (higher threshold)
+    if(P.eaten>=25 && frame%600===0 && hazards.length<4){
+      spawnHazard('LEISH');
+    }
+  }
+
+  for(let i=hazards.length-1;i>=0;i--){
+    const h=hazards[i];
+    h.life--;
+    h.wobble+=0.1;
+
+    // Chase player
+    const dx=P.x-h.x, dy=P.y-h.y;
+    const d=Math.sqrt(dx*dx+dy*dy);
+    if(d>1){
+      h.x+=dx/d*h.spd;
+      h.y+=dy/d*h.spd;
+    }
+
+    // Trail
+    if(frame%3===0){
+      h.trail.push({x:h.x,y:h.y,life:1});
+    }
+    for(let j=h.trail.length-1;j>=0;j--){
+      h.trail[j].life-=0.04;
+      if(h.trail[j].life<=0) h.trail.splice(j,1);
+    }
+
+    // Contact with player
+    if(d<P.r+h.r){
+      P.hp-=h.dmg;
+      P.damageFlash=15;
+      shakeTime=12;
+      // Knockback
+      const kf=8;
+      P.knockX=-(dx/d)*kf;
+      P.knockY=-(dy/d)*kf;
+      addP(P.x,P.y,'#FF4444',15,6);
+      addText(P.x,P.y-P.r-10,'-'+h.dmg+' HP','#FF4444',16);
+      sndHazardHit();
+      // Remove hazard after hit
+      hazards.splice(i,1);
+      continue;
+    }
+
+    // Remove if expired or out of bounds far
+    if(h.life<=0){
+      hazards.splice(i,1);
+    }
+  }
+}
+
+function checkPowerMilestone(){
+  if(P.eaten>0 && P.eaten%10===0 && P.eaten!==P.lastPowerMilestone){
+    P.lastPowerMilestone=P.eaten;
+    activatePower();
+  }
+}
+
+// --- DRAW ---
+function drawBG(){
+  ctx.fillStyle='#FFDDE0';
+  ctx.fillRect(0,0,GW,GH);
+  ctx.strokeStyle='rgba(190,110,130,0.12)';
+  ctx.lineWidth=1;
+  const oX=-(camX%CELL_SIZE)-CELL_SIZE;
+  const oY=-(camY%CELL_SIZE)-CELL_SIZE;
+  for(let x=oX;x<GW+CELL_SIZE*2;x+=CELL_SIZE){
+    for(let y=oY;y<GH+CELL_SIZE*2;y+=CELL_SIZE){
+      const row=Math.floor((y+camY)/CELL_SIZE);
+      const off=(row%2)*CELL_SIZE*0.5;
+      ctx.beginPath();ctx.arc(x+off,y,CELL_SIZE*0.38,0,Math.PI*2);ctx.stroke();
+      ctx.beginPath();ctx.arc(x+off,y,CELL_SIZE*0.12,0,Math.PI*2);
+      ctx.fillStyle='rgba(180,100,120,0.08)';ctx.fill();
+    }
+  }
+  const bx=-camX, by=-camY;
+  ctx.strokeStyle='rgba(150,30,60,0.4)';ctx.lineWidth=4;
+  ctx.strokeRect(bx,by,WORLD_W,WORLD_H);
+  ctx.strokeStyle='rgba(150,30,60,0.15)';ctx.lineWidth=12;
+  ctx.strokeRect(bx-4,by-4,WORLD_W+8,WORLD_H+8);
+}
+
+function drawBact(b){
+  const sx=b.x-camX+shakeX, sy=b.y-camY+shakeY;
+  if(sx<-30||sx>GW+30||sy<-30||sy>GH+30) return;
+  ctx.save();ctx.translate(sx,sy);
+  if(b.flash>0 && Math.floor(b.flash/2)%2===0){ctx.restore();return;}
+  const c=b.cfg;
+  if(b.capsule>=2){
+    ctx.beginPath();ctx.arc(0,0,b.r*1.5,0,Math.PI*2);
+    ctx.fillStyle='rgba(255,200,100,0.25)';ctx.fill();
+    ctx.strokeStyle='rgba(200,150,50,0.4)';ctx.lineWidth=2;ctx.setLineDash([3,3]);ctx.stroke();ctx.setLineDash([]);
+  } else if(b.capsule===1){
+    ctx.beginPath();ctx.arc(0,0,b.r*1.3,0,Math.PI*1.2);
+    ctx.strokeStyle='rgba(200,150,50,0.2)';ctx.lineWidth=1.5;ctx.setLineDash([2,4]);ctx.stroke();ctx.setLineDash([]);
+  }
+  if(c.shape==='rod'){
+    const angle=Math.atan2(b.vy,b.vx);ctx.rotate(angle);
+    ctx.beginPath();ctx.ellipse(0,0,b.r*1.6,b.r*0.7,0,0,Math.PI*2);
+    const rg=ctx.createRadialGradient(-2,-1,0,0,0,b.r*1.4);
+    rg.addColorStop(0,'#77CCFF');rg.addColorStop(1,c.col);
+    ctx.fillStyle=rg;ctx.fill();ctx.strokeStyle=c.dk;ctx.lineWidth=1.2;ctx.stroke();
+    ctx.strokeStyle='rgba(68,153,221,0.5)';ctx.lineWidth=1;ctx.beginPath();
+    for(let i=0;i<10;i++){const t=i/9;ctx.lineTo(-b.r*1.6-t*8, Math.sin(b.wobble*3+t*5)*4);}
+    ctx.stroke();
+  } else if(c.shape==='spiral'){
+    const angle=Math.atan2(b.vy,b.vx);ctx.rotate(angle);
+    ctx.strokeStyle=c.col;ctx.lineWidth=3;ctx.lineCap='round';ctx.beginPath();
+    for(let i=0;i<30;i++){const t=i/29;const sx2=(t-0.5)*b.r*3.5;const sy2=Math.sin(b.wobble*4+t*8)*b.r*0.5;
+      if(i===0)ctx.moveTo(sx2,sy2);else ctx.lineTo(sx2,sy2);}
+    ctx.stroke();ctx.strokeStyle=c.dk;ctx.lineWidth=1.5;ctx.beginPath();
+    for(let i=0;i<30;i++){const t=i/29;ctx.lineTo((t-0.5)*b.r*3.5, Math.sin(b.wobble*4+t*8)*b.r*0.5);}
+    ctx.stroke();
+  } else {
+    ctx.beginPath();ctx.arc(0,0,b.r,0,Math.PI*2);
+    const cg=ctx.createRadialGradient(-b.r*0.2,-b.r*0.2,0,0,0,b.r);
+    cg.addColorStop(0,c.col);cg.addColorStop(1,c.dk);
+    ctx.fillStyle=cg;ctx.fill();ctx.strokeStyle=c.dk;ctx.lineWidth=1.2;ctx.stroke();
+    ctx.beginPath();ctx.arc(0,0,b.r*0.35,0,Math.PI*2);ctx.fillStyle='rgba(0,0,0,0.1)';ctx.fill();
+  }
+  ctx.font='bold 7px Arial,sans-serif';ctx.textAlign='center';ctx.textBaseline='bottom';
+  ctx.fillStyle='rgba(0,0,0,0.4)';ctx.fillText(c.short,0,-b.r-3);
+  ctx.fillStyle='rgba(255,255,255,0.8)';ctx.fillText(c.short,0,-b.r-4);
+  ctx.restore();
+}
+
+function drawTarget(t){
+  const sx=t.x-camX+shakeX, sy=t.y-camY+shakeY;
+  if(sx<-40||sx>GW+40||sy<-40||sy>GH+40) return;
+  ctx.save();ctx.translate(sx,sy);
+  if(t.flash>0 && Math.floor(t.flash/2)%2===0){ctx.restore();return;}
+  const c=t.cfg;
+
+  if(c.shape==='debris'){
+    // Irregular gray fragments
+    ctx.fillStyle=c.col;ctx.strokeStyle=c.dk;ctx.lineWidth=1.5;
+    ctx.beginPath();
+    for(let i=0;i<6;i++){
+      const a=(i/6)*Math.PI*2+t.wobble;
+      const r2=t.r*(0.6+Math.sin(a*3+t.wobble)*0.4);
+      if(i===0)ctx.moveTo(Math.cos(a)*r2,Math.sin(a)*r2);
+      else ctx.lineTo(Math.cos(a)*r2,Math.sin(a)*r2);
+    }
+    ctx.closePath();ctx.fill();ctx.stroke();
+    // X mark
+    ctx.strokeStyle='rgba(0,0,0,0.3)';ctx.lineWidth=1.5;
+    ctx.beginPath();ctx.moveTo(-4,-4);ctx.lineTo(4,4);ctx.moveTo(4,-4);ctx.lineTo(-4,4);ctx.stroke();
+  } else if(c.shape==='necrotic'){
+    // Dark red irregular mass
+    ctx.fillStyle=c.col;ctx.strokeStyle=c.dk;ctx.lineWidth=2;
+    ctx.beginPath();
+    for(let i=0;i<8;i++){
+      const a=(i/8)*Math.PI*2;
+      const r2=t.r*(0.7+Math.sin(a*2+t.wobble*0.5)*0.3);
+      if(i===0)ctx.moveTo(Math.cos(a)*r2,Math.sin(a)*r2);
+      else ctx.lineTo(Math.cos(a)*r2,Math.sin(a)*r2);
+    }
+    ctx.closePath();ctx.fill();ctx.stroke();
+    // Crack lines
+    ctx.strokeStyle='rgba(0,0,0,0.25)';ctx.lineWidth=1;
+    ctx.beginPath();ctx.moveTo(-t.r*0.3,-t.r*0.2);ctx.lineTo(t.r*0.2,t.r*0.3);
+    ctx.moveTo(t.r*0.1,-t.r*0.3);ctx.lineTo(-t.r*0.1,t.r*0.1);ctx.stroke();
+    // Hits remaining indicator
+    if(t.hitsLeft>1){
+      ctx.font='bold 8px Arial';ctx.textAlign='center';ctx.fillStyle='#FFF';
+      ctx.fillText('x'+t.hitsLeft,0,3);
+    }
+  } else if(c.shape==='apoptotic'){
+    // Orange blebbing cell
+    ctx.fillStyle=c.col;ctx.strokeStyle=c.dk;ctx.lineWidth=1.5;
+    ctx.beginPath();ctx.arc(0,0,t.r,0,Math.PI*2);ctx.fill();ctx.stroke();
+    // Blebs
+    for(let i=0;i<4;i++){
+      const a=(i/4)*Math.PI*2+t.wobble;
+      ctx.beginPath();ctx.arc(Math.cos(a)*t.r*0.7,Math.sin(a)*t.r*0.7,t.r*0.3,0,Math.PI*2);
+      ctx.fillStyle='rgba(255,180,80,0.5)';ctx.fill();
+    }
+    // Fragmented nucleus
+    ctx.fillStyle='rgba(100,50,0,0.3)';
+    ctx.beginPath();ctx.arc(-2,-1,t.r*0.2,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.arc(3,2,t.r*0.15,0,Math.PI*2);ctx.fill();
+  } else if(c.shape==='fibrosis'){
+    // Large yellow fibrous mass
+    ctx.fillStyle=c.col;ctx.strokeStyle=c.dk;ctx.lineWidth=2;
+    ctx.beginPath();
+    for(let i=0;i<10;i++){
+      const a=(i/10)*Math.PI*2;
+      const r2=t.r*(0.8+Math.sin(a*4+t.wobble*0.3)*0.2);
+      if(i===0)ctx.moveTo(Math.cos(a)*r2,Math.sin(a)*r2);
+      else ctx.lineTo(Math.cos(a)*r2,Math.sin(a)*r2);
+    }
+    ctx.closePath();ctx.fill();ctx.stroke();
+    // Fiber lines
+    ctx.strokeStyle='rgba(150,120,30,0.4)';ctx.lineWidth=1;
+    for(let i=0;i<5;i++){
+      const a1=Math.random()*Math.PI*2;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a1)*t.r*0.2,Math.sin(a1)*t.r*0.2);
+      ctx.lineTo(Math.cos(a1+1)*t.r*0.6,Math.sin(a1+1)*t.r*0.6);
+      ctx.stroke();
+    }
+    if(t.hitsLeft>1){
+      ctx.font='bold 9px Arial';ctx.textAlign='center';ctx.fillStyle='#FFF';
+      ctx.fillText('x'+t.hitsLeft,0,3);
+    }
+  }
+  ctx.font='bold 7px Arial,sans-serif';ctx.textAlign='center';ctx.textBaseline='bottom';
+  ctx.fillStyle='rgba(0,0,0,0.4)';ctx.fillText(c.short,0,-t.r-3);
+  ctx.fillStyle='rgba(255,255,255,0.8)';ctx.fillText(c.short,0,-t.r-4);
+  ctx.restore();
+}
+
+function drawHazard(h){
+  const sx=h.x-camX+shakeX, sy=h.y-camY+shakeY;
+
+  // Trail
+  for(const tr of h.trail){
+    const tx=tr.x-camX+shakeX, ty=tr.y-camY+shakeY;
+    ctx.globalAlpha=tr.life*0.3;
+    ctx.beginPath();ctx.arc(tx,ty,h.r*0.5*tr.life,0,Math.PI*2);
+    ctx.fillStyle='rgba(255,50,50,0.4)';ctx.fill();
+  }
+  ctx.globalAlpha=1;
+
+  if(sx<-40||sx>GW+40||sy<-40||sy>GH+40) return;
+  ctx.save();ctx.translate(sx,sy);
+
+  // Red pulsing aura
+  const pulse=0.5+Math.sin(frame*0.15)*0.5;
+  ctx.beginPath();ctx.arc(0,0,h.r+6+pulse*4,0,Math.PI*2);
+  ctx.fillStyle=`rgba(255,30,30,${0.1+pulse*0.1})`;ctx.fill();
+
+  if(h.type==='TOXO'){
+    // Crescent / half-moon shape
+    const angle=Math.atan2(P.y-h.y,P.x-h.x);
+    ctx.rotate(angle);
+    ctx.beginPath();
+    ctx.ellipse(0,0,h.r*1.4,h.r*0.5,0,0,Math.PI*2);
+    const tg=ctx.createRadialGradient(-2,0,0,0,0,h.r*1.2);
+    tg.addColorStop(0,'#DDAA44');tg.addColorStop(1,'#886622');
+    ctx.fillStyle=tg;ctx.fill();
+    ctx.strokeStyle='#664411';ctx.lineWidth=1.5;ctx.stroke();
+    // Inner organelle
+    ctx.beginPath();ctx.arc(h.r*0.3,0,h.r*0.2,0,Math.PI*2);
+    ctx.fillStyle='rgba(80,50,10,0.4)';ctx.fill();
+  } else {
+    // Leishmania - oval with flagellum
+    const angle=Math.atan2(P.y-h.y,P.x-h.x);
+    ctx.rotate(angle);
+    ctx.beginPath();
+    ctx.ellipse(0,0,h.r*1.3,h.r*0.6,0,0,Math.PI*2);
+    const lg=ctx.createRadialGradient(-1,0,0,0,0,h.r);
+    lg.addColorStop(0,'#558844');lg.addColorStop(1,'#336633');
+    ctx.fillStyle=lg;ctx.fill();
+    ctx.strokeStyle='#224422';ctx.lineWidth=1.2;ctx.stroke();
+    // Flagellum
+    ctx.strokeStyle='rgba(50,100,50,0.7)';ctx.lineWidth=1.5;ctx.lineCap='round';
+    ctx.beginPath();
+    for(let i=0;i<12;i++){
+      const t=i/11;
+      const fx=-h.r*1.3-t*15;
+      const fy=Math.sin(h.wobble*3+t*6)*4;
+      if(i===0)ctx.moveTo(fx,fy);else ctx.lineTo(fx,fy);
+    }
+    ctx.stroke();
+    // Kinetoplast
+    ctx.beginPath();ctx.arc(-h.r*0.4,0,h.r*0.15,0,Math.PI*2);
+    ctx.fillStyle='rgba(20,50,20,0.5)';ctx.fill();
+  }
+
+  ctx.restore();
+}
+
+function drawPlayer(){
+  const sx=P.x-camX+shakeX, sy=P.y-camY+shakeY;
+  ctx.save();ctx.translate(sx,sy);
+
+  const cfg=CHAR_CONFIG[charType];
+
+  // Power aura
+  if(P.power>0){
+    const pa=0.3+Math.sin(frame*0.1)*0.15;
+    ctx.beginPath();ctx.arc(0,0,P.r+12+Math.sin(frame*0.08)*4,0,Math.PI*2);
+    if(charType==='M1') ctx.fillStyle=`rgba(255,200,50,${pa})`;
+    else if(charType==='NEUTRO') ctx.fillStyle=`rgba(100,170,255,${pa})`;
+    else ctx.fillStyle=`rgba(100,255,170,${pa})`;
+    ctx.fill();
+  }
+
+  // Neutro AoE ring
+  if(charType==='NEUTRO' && P.power>0){
+    const aoR=120;
+    ctx.beginPath();ctx.arc(0,0,aoR,0,Math.PI*2);
+    ctx.strokeStyle=`rgba(100,170,255,${0.15+Math.sin(frame*0.15)*0.1})`;
+    ctx.lineWidth=2;ctx.setLineDash([5,5]);ctx.stroke();ctx.setLineDash([]);
+  }
+
+  // Movement direction indicator
+  if(P.moving){
+    ctx.beginPath();
+    ctx.arc(0,0,P.r+15,P.moveAngle-0.3,P.moveAngle+0.3);
+    ctx.strokeStyle=`rgba(${charType==='M1'?'180,100,200':charType==='NEUTRO'?'100,150,220':'100,180,140'},0.2)`;
+    ctx.lineWidth=3;ctx.stroke();
+  }
+
+  // Pseudopods
+  const targetArr = charType==='M2' ? targets : bacteria;
+  for(let i=0;i<7;i++){
+    const baseAngle=(i/7)*Math.PI*2+P.pseudo;
+    let extension=0.5;
+    if(P.moving){
+      const diff=Math.abs(((baseAngle-P.moveAngle)%(Math.PI*2)+Math.PI*3)%(Math.PI*2)-Math.PI);
+      extension=0.3+Math.cos(diff)*0.5+0.2;
+    }
+    let nearestDist=200;
+    for(const b of targetArr){
+      if(b.eating||b.repairing) continue;
+      const d=dist(P.x,P.y,b.x,b.y);
+      if(d<nearestDist){
+        nearestDist=d;
+        const bAngle=Math.atan2(b.y-P.y,b.x-P.x);
+        const diff2=Math.abs(((baseAngle-bAngle)%(Math.PI*2)+Math.PI*3)%(Math.PI*2)-Math.PI);
+        if(diff2<0.8) extension=Math.max(extension,0.9-d/200);
+      }
+    }
+    const len=P.r*0.4*(0.4+extension*0.8)+Math.sin(P.pseudo*2+i*1.5)*3;
+    const px=Math.cos(baseAngle)*(P.r*0.7+len);
+    const py=Math.sin(baseAngle)*(P.r*0.7+len);
+    ctx.beginPath();ctx.ellipse(px,py,7+len*0.15,5+len*0.1,baseAngle,0,Math.PI*2);
+    ctx.fillStyle=cfg.pseudoCol;ctx.fill();
+  }
+
+  // Main body
+  ctx.beginPath();ctx.arc(0,0,P.r,0,Math.PI*2);
+  const pg=ctx.createRadialGradient(-P.r*0.15,-P.r*0.15,0,0,0,P.r);
+  pg.addColorStop(0,cfg.bodyColors[0]);pg.addColorStop(0.5,cfg.bodyColors[1]);pg.addColorStop(1,cfg.bodyColors[2]);
+  ctx.fillStyle=pg;ctx.fill();
+  ctx.strokeStyle=cfg.dark;ctx.lineWidth=2;ctx.stroke();
+
+  // Damage flash overlay
+  if(P.damageFlash>0){
+    ctx.beginPath();ctx.arc(0,0,P.r,0,Math.PI*2);
+    ctx.fillStyle=`rgba(255,0,0,${P.damageFlash/15*0.4})`;ctx.fill();
+  }
+
+  // Nucleus (different per character)
+  if(charType==='NEUTRO'){
+    // Multilobed nucleus (3 lobes)
+    ctx.fillStyle=cfg.nucleusCol;
+    const lobes=[[-P.r*0.2,-P.r*0.15],[P.r*0.1,P.r*0.1],[-P.r*0.05,P.r*0.2]];
+    for(const [lx,ly] of lobes){
+      ctx.beginPath();ctx.ellipse(lx,ly,P.r*0.18,P.r*0.14,Math.random()*0.5,0,Math.PI*2);ctx.fill();
+    }
+    // Connections between lobes
+    ctx.strokeStyle=cfg.nucleusCol;ctx.lineWidth=P.r*0.08;
+    ctx.beginPath();ctx.moveTo(lobes[0][0],lobes[0][1]);ctx.lineTo(lobes[1][0],lobes[1][1]);
+    ctx.lineTo(lobes[2][0],lobes[2][1]);ctx.stroke();
+  } else {
+    // Standard kidney-bean nucleus
+    ctx.beginPath();ctx.ellipse(-P.r*0.08,P.r*0.05,P.r*0.35,P.r*0.28,0.3,0,Math.PI*2);
+    ctx.fillStyle=cfg.nucleusCol;ctx.fill();
+  }
+
+  // Phagosomes inside
+  for(const ph of phagosomes){
+    const a=ph.life/90;
+    ctx.globalAlpha=a;
+    ctx.beginPath();ctx.arc(ph.ox,ph.oy,ph.r,0,Math.PI*2);
+    ctx.fillStyle=ph.col;ctx.fill();
+    ctx.strokeStyle=cfg.uiDark;ctx.lineWidth=1;ctx.stroke();
+  }
+  ctx.globalAlpha=1;
+
+  // Lysosomes
+  for(let i=0;i<5;i++){
+    const a=(i/5)*Math.PI*2+P.pseudo*0.7;
+    const lr=P.r*0.55;
+    ctx.beginPath();ctx.arc(Math.cos(a)*lr,Math.sin(a)*lr,2.5,0,Math.PI*2);
+    ctx.fillStyle='rgba(200,120,60,0.3)';ctx.fill();
+  }
+
+  // Eyes
+  const eOff=P.moving?P.moveAngle:0;
+  const ex1=Math.cos(eOff-0.35)*P.r*0.35;
+  const ey1=Math.sin(eOff-0.35)*P.r*0.35;
+  const ex2=Math.cos(eOff+0.35)*P.r*0.35;
+  const ey2=Math.sin(eOff+0.35)*P.r*0.35;
+  [[ex1,ey1],[ex2,ey2]].forEach(([x,y])=>{
+    ctx.beginPath();ctx.arc(x,y,4.5,0,Math.PI*2);ctx.fillStyle='#FFEEFF';ctx.fill();
+    const px2=x+Math.cos(eOff)*1.5, py2=y+Math.sin(eOff)*1.5;
+    ctx.beginPath();ctx.arc(px2,py2,2.2,0,Math.PI*2);ctx.fillStyle=cfg.eyeCol;ctx.fill();
+  });
+
+  // Health halo
+  if(P.hp<50){
+    const ha=(1-P.hp/50)*0.3;
+    ctx.beginPath();ctx.arc(0,0,P.r+3,0,Math.PI*2);
+    ctx.strokeStyle=`rgba(255,50,50,${ha*(0.5+Math.sin(frame*0.15)*0.5)})`;
+    ctx.lineWidth=2;ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+function drawParticles(){
+  for(const p of particles){
+    const sx=p.x-camX+shakeX,sy=p.y-camY+shakeY;
+    ctx.globalAlpha=p.life;
+    ctx.beginPath();ctx.arc(sx,sy,p.r*p.life,0,Math.PI*2);
+    ctx.fillStyle=p.col;ctx.fill();
+  }
+  ctx.globalAlpha=1;
+}
+
+function drawTexts(){
+  for(const t of texts){
+    const sx=t.x-camX+shakeX,sy=t.y-camY+shakeY;
+    ctx.globalAlpha=t.life;
+    const s=t.sz*(1+(1-t.life)*0.2);
+    ctx.font=`bold ${s}px Arial,sans-serif`;ctx.textAlign='center';
+    ctx.fillStyle='rgba(0,0,0,0.3)';ctx.fillText(t.txt,sx+1,sy+1);
+    ctx.fillStyle=t.col;ctx.fillText(t.txt,sx,sy);
+  }
+  ctx.globalAlpha=1;
+}
+
+function drawUI(){
+  const cfg=CHAR_CONFIG[charType];
+
+  // HP bar
+  const bw=180,bh=14,bx=15,by=15;
+  const pct=P.hp/P.maxHp;
+  ctx.fillStyle='rgba(0,0,0,0.35)';
+  ctx.beginPath();ctx.roundRect(bx,by,bw,bh,bh/2);ctx.fill();
+  ctx.save();
+  ctx.beginPath();ctx.roundRect(bx,by,bw,bh,bh/2);ctx.clip();
+  const hg=ctx.createLinearGradient(bx,0,bx+bw,0);
+  if(P.power>0){
+    // Power-colored HP bar
+    if(charType==='M1'){hg.addColorStop(0,'#FFD700');hg.addColorStop(1,'#FF8800');}
+    else if(charType==='NEUTRO'){hg.addColorStop(0,'#66BBFF');hg.addColorStop(1,'#3388DD');}
+    else{hg.addColorStop(0,'#66FFAA');hg.addColorStop(1,'#33CC77');}
+  } else if(pct>0.5){hg.addColorStop(0,'#55DD77');hg.addColorStop(1,'#33AA55');}
+  else if(pct>0.25){hg.addColorStop(0,'#DDDD44');hg.addColorStop(1,'#AAAA33');}
+  else{hg.addColorStop(0,'#DD4444');hg.addColorStop(1,'#AA2222');}
+  ctx.fillStyle=hg;ctx.fillRect(bx,by,bw*pct,bh);
+  ctx.restore();
+  ctx.strokeStyle='rgba(255,255,255,0.35)';ctx.lineWidth=1;
+  ctx.beginPath();ctx.roundRect(bx,by,bw,bh,bh/2);ctx.stroke();
+
+  ctx.font='bold 10px Arial,sans-serif';ctx.textAlign='left';
+  ctx.fillStyle='rgba(255,255,255,0.7)';
+  ctx.fillText('ENERGIA',bx,by+bh+12);
+
+  // Power bar (below HP)
+  if(P.power>0){
+    const pw=150,ph2=8,px2=15,py2=by+bh+18;
+    const ppct=P.power/600;
+    ctx.fillStyle='rgba(0,0,0,0.3)';
+    ctx.beginPath();ctx.roundRect(px2,py2,pw,ph2,ph2/2);ctx.fill();
+    ctx.save();
+    ctx.beginPath();ctx.roundRect(px2,py2,pw,ph2,ph2/2);ctx.clip();
+    let powerCol;
+    if(charType==='M1') powerCol='#FFD700';
+    else if(charType==='NEUTRO') powerCol='#66BBFF';
+    else powerCol='#66FFAA';
+    ctx.fillStyle=powerCol;
+    ctx.fillRect(px2,py2,pw*ppct,ph2);
+    ctx.restore();
+    ctx.strokeStyle='rgba(255,255,255,0.3)';ctx.lineWidth=1;
+    ctx.beginPath();ctx.roundRect(px2,py2,pw,ph2,ph2/2);ctx.stroke();
+    ctx.font='bold 8px Arial,sans-serif';
+    ctx.fillStyle=powerCol;ctx.fillText(cfg.cytokine+' ATIVO',px2,py2+ph2+10);
+  }
+
+  // Score
+  ctx.font="bold 20px 'Courier New',monospace";ctx.textAlign='right';
+  ctx.fillStyle='rgba(0,0,0,0.2)';ctx.fillText(P.eaten+' '+cfg.scoreLabel,GW-13,32);
+  ctx.fillStyle='#FFF';ctx.fillText(P.eaten+' '+cfg.scoreLabel,GW-15,30);
+
+  // Character name
+  ctx.font='bold 10px Arial,sans-serif';ctx.textAlign='right';
+  ctx.fillStyle=cfg.uiAccent;ctx.fillText(cfg.name,GW-15,48);
+
+  // Minimap
+  const mmW=100,mmH=70,mmX=GW-mmW-10,mmY=GH-mmH-10;
+  ctx.fillStyle='rgba(0,0,0,0.3)';
+  ctx.fillRect(mmX,mmY,mmW,mmH);
+  ctx.strokeStyle='rgba(255,255,255,0.2)';ctx.lineWidth=1;
+  ctx.strokeRect(mmX,mmY,mmW,mmH);
+
+  // Dots on minimap
+  if(charType==='M2'){
+    for(const t of targets){
+      if(t.repairing) continue;
+      const mx=mmX+t.x/WORLD_W*mmW;
+      const my=mmY+t.y/WORLD_H*mmH;
+      ctx.beginPath();ctx.arc(mx,my,1.5,0,Math.PI*2);
+      ctx.fillStyle=t.cfg.col;ctx.fill();
+    }
+  } else {
+    for(const b of bacteria){
+      if(b.eating) continue;
+      const mx=mmX+b.x/WORLD_W*mmW;
+      const my=mmY+b.y/WORLD_H*mmH;
+      ctx.beginPath();ctx.arc(mx,my,1.5,0,Math.PI*2);
+      ctx.fillStyle=b.cfg.col;ctx.fill();
+    }
+  }
+
+  // Hazards on minimap (blinking red)
+  if(Math.floor(frame/10)%2===0){
+    for(const h of hazards){
+      const mx=mmX+h.x/WORLD_W*mmW;
+      const my=mmY+h.y/WORLD_H*mmH;
+      ctx.beginPath();ctx.arc(mx,my,3,0,Math.PI*2);
+      ctx.fillStyle='#FF3333';ctx.fill();
+      // Danger icon
+      ctx.font='bold 6px Arial';ctx.textAlign='center';
+      ctx.fillStyle='#FFF';ctx.fillText('!',mx,my+2);
+    }
+  }
+
+  // Player on minimap
+  const pmx=mmX+P.x/WORLD_W*mmW;
+  const pmy=mmY+P.y/WORLD_H*mmH;
+  ctx.beginPath();ctx.arc(pmx,pmy,3,0,Math.PI*2);
+  ctx.fillStyle=cfg.uiAccent;ctx.fill();
+
+  // Viewport rect
+  ctx.strokeStyle='rgba(255,255,255,0.4)';ctx.lineWidth=1;
+  ctx.strokeRect(mmX+camX/WORLD_W*mmW,mmY+camY/WORLD_H*mmH,GW/WORLD_W*mmW,GH/WORLD_H*mmH);
+
+  // Alerts
+  for(const a of alerts){
+    ctx.globalAlpha=Math.min(1,a.life*2);
+    ctx.font='bold 14px Arial,sans-serif';ctx.textAlign='center';
+    ctx.fillStyle='rgba(0,0,0,0.4)';ctx.fillText(a.msg,GW/2+1,a.y+1);
+    ctx.fillStyle=a.col;ctx.fillText(a.msg,GW/2,a.y);
+  }
+  ctx.globalAlpha=1;
+
+  // HP warning flash
+  if(P.hp<25){
+    const wa=((1-P.hp/25)*0.15)*(0.5+Math.sin(frame*0.12)*0.5);
+    ctx.fillStyle=`rgba(200,0,0,${wa})`;ctx.fillRect(0,0,GW,GH);
+  }
+
+  // Damage flash (full screen red flash)
+  if(P.damageFlash>0){
+    ctx.fillStyle=`rgba(255,0,0,${P.damageFlash/15*0.15})`;
+    ctx.fillRect(0,0,GW,GH);
+  }
+}
+
+function drawMenu(){
+  drawBG();
+  ctx.fillStyle='rgba(30,8,25,0.8)';ctx.fillRect(0,0,GW,GH);
+
+  const t=Date.now()*0.002;
+
+  ctx.font='bold 46px Arial,sans-serif';ctx.textAlign='center';
+  ctx.shadowColor='#CC55FF';ctx.shadowBlur=20;ctx.fillStyle='#F0E0FF';
+  ctx.fillText('JOGO DO FAGOCITO',GW/2,GH*0.16);ctx.shadowBlur=0;
+
+  ctx.font='bold 16px Arial,sans-serif';ctx.fillStyle='#CC99FF';
+  ctx.fillText('Defenda o organismo!',GW/2,GH*0.16+35);
+
+  // Animated macrophage
+  ctx.save();ctx.translate(GW/2,GH*0.42);
+  const sc=2+Math.sin(t)*0.15;ctx.scale(sc,sc);
+  for(let i=0;i<6;i++){
+    const a=(i/6)*Math.PI*2+t*0.5;
+    const l=18+Math.sin(t+i*1.2)*5;
+    ctx.beginPath();ctx.ellipse(Math.cos(a)*l,Math.sin(a)*l,6,4.5,a,0,Math.PI*2);
+    ctx.fillStyle='#7744AA';ctx.fill();
+  }
+  ctx.beginPath();ctx.arc(0,0,16,0,Math.PI*2);ctx.fillStyle='#9955CC';ctx.fill();
+  ctx.strokeStyle='#664499';ctx.lineWidth=1.5;ctx.stroke();
+  ctx.beginPath();ctx.arc(-4,-3,3.5,0,Math.PI*2);ctx.fillStyle='#FFEEFF';ctx.fill();
+  ctx.beginPath();ctx.arc(-3,-2,1.8,0,Math.PI*2);ctx.fillStyle='#660066';ctx.fill();
+  ctx.beginPath();ctx.arc(4,-3,3.5,0,Math.PI*2);ctx.fillStyle='#FFEEFF';ctx.fill();
+  ctx.beginPath();ctx.arc(5,-2,1.8,0,Math.PI*2);ctx.fillStyle='#660066';ctx.fill();
+  ctx.restore();
+
+  // Small bacteria
+  const bacs=[[GW*0.25,GH*0.38,'#55CC55',5],[GW*0.72,GH*0.35,'#4499DD',4],[GW*0.3,GH*0.5,'#EE5544',3],[GW*0.7,GH*0.5,'#FFAA33',6]];
+  bacs.forEach(([x,y,col,r])=>{
+    ctx.beginPath();ctx.arc(x+Math.sin(t*2+x)*3,y+Math.cos(t*1.5+y)*3,r,0,Math.PI*2);
+    ctx.fillStyle=col;ctx.fill();
+  });
+
+  ctx.font='12px Arial,sans-serif';ctx.fillStyle='#DDBBFF';
+  ctx.fillText('Escolha seu personagem e proteja o tecido!',GW/2,GH*0.6);
+  ctx.fillText('Coma para manter sua energia. Cuidado com os protozoarios!',GW/2,GH*0.6+18);
+
+  ctx.font='bold 13px Arial,sans-serif';ctx.fillStyle='#FFDD88';
+  const mob='ontouchstart' in window;
+  ctx.fillText(mob?'TOQUE E ARRASTE para mover':'Mova o MOUSE para controlar',GW/2,GH*0.74);
+
+  ctx.font='bold 18px Arial,sans-serif';
+  const bl=Math.sin(Date.now()*0.004)*0.5+0.5;
+  ctx.fillStyle=`rgba(255,255,255,${0.5+bl*0.5})`;
+  ctx.fillText(mob?'TOQUE PARA JOGAR':'CLIQUE PARA JOGAR',GW/2,GH*0.88);
+
+  if(highScore>0){ctx.font='12px Arial,sans-serif';ctx.fillStyle='#AA88CC';
+    ctx.fillText('Recorde: '+highScore,GW/2,GH*0.95);}
+}
+
+function drawSelect(){
+  ctx.fillStyle='#1A0A20';ctx.fillRect(0,0,GW,GH);
+
+  // Background subtle pattern
+  const t=Date.now()*0.001;
+  for(let i=0;i<20;i++){
+    const x=((i*137+t*20)%GW);
+    const y=((i*89+t*10)%GH);
+    ctx.beginPath();ctx.arc(x,y,2,0,Math.PI*2);
+    ctx.fillStyle='rgba(100,50,150,0.15)';ctx.fill();
+  }
+
+  ctx.font='bold 28px Arial,sans-serif';ctx.textAlign='center';
+  ctx.fillStyle='#F0E0FF';
+  ctx.shadowColor='#CC55FF';ctx.shadowBlur=15;
+  ctx.fillText('ESCOLHA SEU PERSONAGEM',GW/2,45);
+  ctx.shadowBlur=0;
+
+  const cards=['M1','NEUTRO','M2'];
+  const cardW=220, cardH=310, gap=20;
+  const totalW=cardW*3+gap*2;
+  const startX=(GW-totalW)/2;
+  const cardY=65;
+
+  cards.forEach((key,idx)=>{
+    const cfg=CHAR_CONFIG[key];
+    const cx=startX+idx*(cardW+gap);
+    const isHover=selectHover===idx;
+
+    // Card background
+    const alpha=isHover?0.5:0.3;
+    ctx.fillStyle=`rgba(40,20,60,${alpha})`;
+    ctx.beginPath();ctx.roundRect(cx,cardY,cardW,cardH,12);ctx.fill();
+
+    // Border
+    ctx.strokeStyle=isHover?cfg.color:'rgba(150,100,200,0.3)';
+    ctx.lineWidth=isHover?3:1.5;
+    ctx.beginPath();ctx.roundRect(cx,cardY,cardW,cardH,12);ctx.stroke();
+
+    // Hover glow
+    if(isHover){
+      ctx.shadowColor=cfg.color;ctx.shadowBlur=20;
+      ctx.beginPath();ctx.roundRect(cx,cardY,cardW,cardH,12);ctx.stroke();
+      ctx.shadowBlur=0;
+    }
+
+    // Character preview (animated)
+    const prevX=cx+cardW/2, prevY=cardY+65;
+    ctx.save();ctx.translate(prevX,prevY);
+
+    // Pseudopods
+    const pR=key==='NEUTRO'?18:22;
+    for(let i=0;i<5;i++){
+      const a=(i/5)*Math.PI*2+t*0.8;
+      const len=pR*0.4+Math.sin(t*2+i*1.3)*3;
+      ctx.beginPath();
+      ctx.ellipse(Math.cos(a)*(pR*0.6+len),Math.sin(a)*(pR*0.6+len),5,3.5,a,0,Math.PI*2);
+      ctx.fillStyle=cfg.pseudoCol;ctx.fill();
+    }
+
+    // Body
+    ctx.beginPath();ctx.arc(0,0,pR,0,Math.PI*2);
+    const pg=ctx.createRadialGradient(-pR*0.15,-pR*0.15,0,0,0,pR);
+    pg.addColorStop(0,cfg.bodyColors[0]);pg.addColorStop(0.5,cfg.bodyColors[1]);pg.addColorStop(1,cfg.bodyColors[2]);
+    ctx.fillStyle=pg;ctx.fill();
+    ctx.strokeStyle=cfg.dark;ctx.lineWidth=1.5;ctx.stroke();
+
+    // Nucleus
+    if(key==='NEUTRO'){
+      ctx.fillStyle=cfg.nucleusCol;
+      const lobes2=[[-pR*0.2,-pR*0.12],[pR*0.1,pR*0.08],[-pR*0.05,pR*0.18]];
+      for(const [lx,ly] of lobes2){
+        ctx.beginPath();ctx.ellipse(lx,ly,pR*0.16,pR*0.12,0,0,Math.PI*2);ctx.fill();
+      }
+      ctx.strokeStyle=cfg.nucleusCol;ctx.lineWidth=pR*0.07;
+      ctx.beginPath();ctx.moveTo(lobes2[0][0],lobes2[0][1]);ctx.lineTo(lobes2[1][0],lobes2[1][1]);
+      ctx.lineTo(lobes2[2][0],lobes2[2][1]);ctx.stroke();
+    } else {
+      ctx.beginPath();ctx.ellipse(-pR*0.08,pR*0.05,pR*0.32,pR*0.25,0.3,0,Math.PI*2);
+      ctx.fillStyle=cfg.nucleusCol;ctx.fill();
+    }
+
+    // Eyes
+    [[-pR*0.25,-pR*0.2],[pR*0.15,-pR*0.2]].forEach(([ex,ey])=>{
+      ctx.beginPath();ctx.arc(ex,ey,3.5,0,Math.PI*2);ctx.fillStyle='#FFEEFF';ctx.fill();
+      ctx.beginPath();ctx.arc(ex+1,ey,1.6,0,Math.PI*2);ctx.fillStyle=cfg.eyeCol;ctx.fill();
+    });
+
+    ctx.restore();
+
+    // Name
+    ctx.font='bold 16px Arial,sans-serif';ctx.textAlign='center';
+    ctx.fillStyle=cfg.color;
+    ctx.fillText(cfg.name,cx+cardW/2,cardY+110);
+
+    // Subtitle
+    ctx.font='bold 11px Arial,sans-serif';
+    ctx.fillStyle=cfg.light;
+    ctx.fillText(cfg.desc,cx+cardW/2,cardY+128);
+
+    // Description
+    ctx.font='11px Arial,sans-serif';
+    ctx.fillStyle='#CCBBDD';
+    ctx.fillText(cfg.detail,cx+cardW/2,cardY+150);
+
+    // Stats
+    const statY=cardY+172;
+    ctx.font='10px Arial,sans-serif';ctx.textAlign='left';
+    const stats=[
+      ['Velocidade',cfg.speed,3.5],
+      ['Raio',cfg.radius,30],
+      ['HP Max',cfg.hpMax,140],
+    ];
+    stats.forEach(([label,val,max],si)=>{
+      const sy2=statY+si*18;
+      ctx.fillStyle='#9988AA';ctx.fillText(label,cx+12,sy2);
+      // Bar
+      const barX=cx+80,barW=120,barH=6;
+      ctx.fillStyle='rgba(0,0,0,0.3)';
+      ctx.beginPath();ctx.roundRect(barX,sy2-6,barW,barH,3);ctx.fill();
+      ctx.fillStyle=cfg.color;
+      ctx.beginPath();ctx.roundRect(barX,sy2-6,barW*(val/max),barH,3);ctx.fill();
+    });
+
+    // Cytokine info
+    ctx.font='bold 10px Arial,sans-serif';ctx.textAlign='center';
+    ctx.fillStyle='#FFD700';
+    ctx.fillText('Citocina: '+cfg.cytokine,cx+cardW/2,statY+62);
+    ctx.font='9px Arial,sans-serif';
+    ctx.fillStyle='#CCAA66';
+    ctx.fillText(cfg.cytokineDesc,cx+cardW/2,statY+76);
+
+    // Special death message
+    ctx.font='9px Arial,sans-serif';
+    ctx.fillStyle='#AA7777';
+    ctx.fillText('Morte: '+cfg.deathMsg,cx+cardW/2,statY+94);
+
+    // Select prompt
+    if(isHover){
+      ctx.font='bold 12px Arial,sans-serif';
+      ctx.fillStyle='#FFF';
+      const bl2=Math.sin(Date.now()*0.005)*0.3+0.7;
+      ctx.globalAlpha=bl2;
+      ctx.fillText('CLIQUE PARA SELECIONAR',cx+cardW/2,cardY+cardH-12);
+      ctx.globalAlpha=1;
+    }
+  });
+}
+
+function drawGameOver(){
+  ctx.fillStyle='rgba(15,5,25,0.85)';ctx.fillRect(0,0,GW,GH);
+
+  const cfg=CHAR_CONFIG[charType];
+
+  // Death title
+  ctx.font='bold 38px Arial,sans-serif';ctx.textAlign='center';
+  const deathCol=charType==='NEUTRO'?'#6699FF':'#FF6666';
+  ctx.shadowColor=deathCol;ctx.shadowBlur=15;ctx.fillStyle=deathCol;
+  ctx.fillText(cfg.deathMsg,GW/2,GH*0.13);ctx.shadowBlur=0;
+
+  ctx.font='12px Arial,sans-serif';ctx.fillStyle='#DDAAAA';
+  ctx.fillText(cfg.deathDesc,GW/2,GH*0.13+30);
+
+  // Neutro NET visual on death
+  if(charType==='NEUTRO'){
+    ctx.strokeStyle='rgba(100,150,255,0.15)';ctx.lineWidth=1;
+    for(let i=0;i<15;i++){
+      const x1=Math.random()*GW, y1=GH*0.15+Math.random()*GH*0.1;
+      const x2=x1+(Math.random()-0.5)*200, y2=y1+(Math.random()-0.5)*40;
+      ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();
+    }
+  }
+
+  ctx.font="bold 24px 'Courier New',monospace";ctx.fillStyle='#FFF';
+  const scoreWord=cfg.scoreLabel;
+  ctx.fillText(P.eaten+' '+scoreWord,GW/2,GH*0.3);
+
+  let ny=GH*0.3+28;
+  if(P.eaten>=highScore&&P.eaten>0){
+    ctx.font='bold 16px Arial,sans-serif';ctx.fillStyle='#FFD700';
+    ctx.shadowColor='#FFD700';ctx.shadowBlur=8;ctx.fillText('NOVO RECORDE!',GW/2,ny);ctx.shadowBlur=0;
+    ny+=22;
+  } else if(highScore>0){
+    ctx.font='12px Arial,sans-serif';ctx.fillStyle='#AA88CC';
+    ctx.fillText('Recorde: '+highScore,GW/2,ny); ny+=18;
+  }
+
+  // Fact
+  const facts=getFacts();
+  const fy=GH*0.47,fh=GH*0.27;
+  ctx.fillStyle='rgba(40,20,80,0.4)';ctx.beginPath();ctx.roundRect(GW*0.08,fy-8,GW*0.84,fh,8);ctx.fill();
+  ctx.strokeStyle='rgba(136,221,255,0.25)';ctx.lineWidth=1;ctx.beginPath();ctx.roundRect(GW*0.08,fy-8,GW*0.84,fh,8);ctx.stroke();
+
+  ctx.font='bold 14px Arial,sans-serif';ctx.fillStyle='#88DDFF';ctx.fillText('Voce sabia?',GW/2,fy+12);
+  ctx.font='12px Arial,sans-serif';ctx.fillStyle='#CCDDFF';
+  const fact=facts[P.eaten%facts.length];
+  const ws=fact.split(' ');let ls=[],cl2='';
+  for(const w of ws){const tt=cl2?cl2+' '+w:w;if(ctx.measureText(tt).width>GW*0.75){ls.push(cl2);cl2=w;}else cl2=tt;}
+  if(cl2)ls.push(cl2);
+  for(let i=0;i<ls.length;i++) ctx.fillText(ls[i],GW/2,fy+30+i*17);
+
+  ctx.font='bold 16px Arial,sans-serif';
+  const bl=Math.sin(Date.now()*0.004)*0.5+0.5;
+  ctx.fillStyle=`rgba(255,255,255,${0.5+bl*0.5})`;
+  const mob='ontouchstart' in window;
+  ctx.fillText(mob?'TOQUE PARA JOGAR NOVAMENTE':'CLIQUE PARA JOGAR NOVAMENTE',GW/2,GH*0.9);
+}
+
+function render(){
+  ctx.clearRect(0,0,GW,GH);
+  if(state==='menu'){drawMenu();return;}
+  if(state==='select'){drawSelect();return;}
+
+  drawBG();
+
+  if(charType==='M2'){
+    for(const t of targets) drawTarget(t);
+  } else {
+    for(const b of bacteria) drawBact(b);
+  }
+
+  for(const h of hazards) drawHazard(h);
+  drawPlayer();
+  drawParticles();
+  drawTexts();
+  drawUI();
+
+  if(state==='gameover') drawGameOver();
+}
+
+// --- INPUT ---
+function screenToWorld(cx,cy){
+  const r=canvas.getBoundingClientRect();
+  const sx=(cx-r.left)*(GW/r.width);
+  const sy=(cy-r.top)*(GH/r.height);
+  return{x:sx+camX, y:sy+camY, sx, sy};
+}
+
+function screenToCanvas(cx,cy){
+  const r=canvas.getBoundingClientRect();
+  return{x:(cx-r.left)*(GW/r.width), y:(cy-r.top)*(GH/r.height)};
+}
+
+function startGame(){initAudio();init();state='playing';}
+
+function handleSelectClick(canvasX,canvasY){
+  const cards=['M1','NEUTRO','M2'];
+  const cardW=220, gap=20;
+  const totalW=cardW*3+gap*2;
+  const startX=(GW-totalW)/2;
+  const cardY=65, cardH=310;
+
+  for(let i=0;i<3;i++){
+    const cx=startX+i*(cardW+gap);
+    if(canvasX>=cx && canvasX<=cx+cardW && canvasY>=cardY && canvasY<=cardY+cardH){
+      charType=cards[i];
+      startGame();
+      return;
+    }
+  }
+}
+
+function handleSelectHover(canvasX,canvasY){
+  const cards=['M1','NEUTRO','M2'];
+  const cardW=220, gap=20;
+  const totalW=cardW*3+gap*2;
+  const startX=(GW-totalW)/2;
+  const cardY=65, cardH=310;
+
+  selectHover=-1;
+  for(let i=0;i<3;i++){
+    const cx=startX+i*(cardW+gap);
+    if(canvasX>=cx && canvasX<=cx+cardW && canvasY>=cardY && canvasY<=cardY+cardH){
+      selectHover=i;
+      return;
+    }
+  }
+}
+
+canvas.addEventListener('touchstart',(e)=>{
+  e.preventDefault();
+  if(state==='menu'){initAudio();state='select';return;}
+  if(state==='select'){
+    const c=screenToCanvas(e.touches[0].clientX,e.touches[0].clientY);
+    handleSelectClick(c.x,c.y);
+    return;
+  }
+  if(state==='gameover'&&Date.now()-gameOverTime>600){state='select';return;}
+  touching=true;
+  const w=screenToWorld(e.touches[0].clientX,e.touches[0].clientY);
+  targetX=w.x;targetY=w.y;
+},{passive:false});
+
+canvas.addEventListener('touchmove',(e)=>{
+  e.preventDefault();
+  if(state==='select'){
+    const c=screenToCanvas(e.touches[0].clientX,e.touches[0].clientY);
+    handleSelectHover(c.x,c.y);
+    return;
+  }
+  if(state!=='playing') return;
+  const w=screenToWorld(e.touches[0].clientX,e.touches[0].clientY);
+  targetX=w.x;targetY=w.y;
+},{passive:false});
+
+canvas.addEventListener('touchend',(e)=>{
+  e.preventDefault();
+  touching=false;
+},{passive:false});
+
+canvas.addEventListener('mousemove',(e)=>{
+  if(state==='select'){
+    const c=screenToCanvas(e.clientX,e.clientY);
+    handleSelectHover(c.x,c.y);
+    return;
+  }
+  if(state!=='playing') return;
+  const w=screenToWorld(e.clientX,e.clientY);
+  targetX=w.x;targetY=w.y;
+});
+
+canvas.addEventListener('mousedown',(e)=>{
+  if(e.button!==0) return;
+  if(state==='menu'){initAudio();state='select';return;}
+  if(state==='select'){
+    const c=screenToCanvas(e.clientX,e.clientY);
+    handleSelectClick(c.x,c.y);
+    return;
+  }
+  if(state==='gameover'&&Date.now()-gameOverTime>600){state='select';return;}
+});
+
+document.addEventListener('keydown',(e)=>{
+  if(e.code==='Space'){
+    e.preventDefault();
+    if(state==='menu'){initAudio();state='select';return;}
+    if(state==='gameover'){state='select';return;}
+  }
+  if(state==='select'){
+    if(e.code==='Digit1'||e.code==='Numpad1'){charType='M1';startGame();}
+    if(e.code==='Digit2'||e.code==='Numpad2'){charType='NEUTRO';startGame();}
+    if(e.code==='Digit3'||e.code==='Numpad3'){charType='M2';startGame();}
+  }
+});
+
+// --- LOOP ---
+function gameLoop(ts){
+  if(lastTS===0) lastTS=ts;
+  accum+=ts-lastTS; lastTS=ts;
+  if(accum>FT*5) accum=FT*5;
+  while(accum>=FT){update();accum-=FT;}
+  render();
+  requestAnimationFrame(gameLoop);
+}
+
+init(); state='menu';
+requestAnimationFrame(gameLoop);
+</script>
+</body>
+</html>
