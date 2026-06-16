@@ -54,7 +54,7 @@ const MACRO_W      = 85;
 const MACRO_H      = 55;
 const GRAVITY      = 0.52;
 const JUMP_FORCE   = -12;
-const BASE_SPEED   = 3.5;
+const BASE_SPEED   = 7;
 
 // --- Fixed timestep (60fps logic regardless of display Hz) ---
 const TARGET_FPS  = 60;
@@ -254,9 +254,9 @@ function update() {
 
   frame++;
 
-  // Speed & difficulty - speed increases but caps
-  speed = BASE_SPEED * (1 + score*0.0003);
-  if (speed > BASE_SPEED*3) speed = BASE_SPEED*3;
+  // Speed & difficulty - speed increases aggressively
+  speed = BASE_SPEED * (1 + score*0.0008);
+  if (speed > BASE_SPEED*4) speed = BASE_SPEED*4;
 
   // Score
   if (frame%3===0) { score++; if (score%100===0) sndScore(); }
@@ -303,8 +303,8 @@ function update() {
   }
 
   // --- Obstacles ---
-  const gap = Math.max(35, 70 - score*0.008);
-  if (frame - lastObsFrame > gap + Math.random()*50) { spawnObs(); lastObsFrame=frame; }
+  const gap = Math.max(20, 50 - score*0.012);
+  if (frame - lastObsFrame > gap + Math.random()*30) { spawnObs(); lastObsFrame=frame; }
 
   // Power-ups every ~600 frames after score 50
   if (score>50 && frame%400===0 && player.shield<=0) spawnPU();
