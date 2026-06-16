@@ -8,7 +8,7 @@
     *{margin:0;padding:0;box-sizing:border-box;}
     html,body{width:100%;height:100%;overflow:hidden;background:#2A0A1E;
       touch-action:none;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none;}
-    canvas{display:block;width:100%;height:100%;}
+    canvas{display:block;}
   </style>
 </head>
 <body>
@@ -17,6 +17,14 @@
 const canvas=document.getElementById('game'), ctx=canvas.getContext('2d');
 const GW=800, GH=450;
 canvas.width=GW; canvas.height=GH;
+function resizeCanvas(){
+  const ar=GW/GH,vw=window.innerWidth,vh=window.innerHeight;
+  let w,h;
+  if(vw/vh>ar){h=vh;w=h*ar;}else{w=vw;h=w/ar;}
+  canvas.style.width=w+'px';canvas.style.height=h+'px';
+  canvas.style.margin=((vh-h)/2)+'px auto 0';
+}
+window.addEventListener('resize',resizeCanvas);resizeCanvas();
 
 const WORLD_W=1600, WORLD_H=1100;
 const CELL_SIZE=65;
@@ -1174,6 +1182,12 @@ function drawMenu(){
     ctx.fillText('Recorde: '+highScore,GW/2,GH*0.95);}
 }
 
+function wrapText(text,maxW){
+  const ws=text.split(' ');let lines=[],cur='';
+  for(const w of ws){const t=cur?cur+' '+w:w;if(ctx.measureText(t).width>maxW){lines.push(cur);cur=w;}else cur=t;}
+  if(cur)lines.push(cur);return lines;
+}
+
 function drawSelect(){
   ctx.fillStyle='#1A0A20';ctx.fillRect(0,0,GW,GH);
 
@@ -1274,13 +1288,15 @@ function drawSelect(){
     ctx.fillStyle=cfg.light;
     ctx.fillText(cfg.desc,cx+cardW/2,cardY+128);
 
-    // Description
+    // Description (word-wrapped)
     ctx.font='11px Arial,sans-serif';
     ctx.fillStyle='#CCBBDD';
-    ctx.fillText(cfg.detail,cx+cardW/2,cardY+150);
+    const detLines=wrapText(cfg.detail,cardW-24);
+    for(let li=0;li<detLines.length;li++) ctx.fillText(detLines[li],cx+cardW/2,cardY+150+li*14);
 
     // Stats
-    const statY=cardY+172;
+    const detOff=(detLines.length-1)*14;
+    const statY=cardY+172+detOff;
     ctx.font='10px Arial,sans-serif';ctx.textAlign='left';
     const stats=[
       ['Velocidade',cfg.speed,3.5],
@@ -1304,12 +1320,14 @@ function drawSelect(){
     ctx.fillText('Citocina: '+cfg.cytokine,cx+cardW/2,statY+62);
     ctx.font='9px Arial,sans-serif';
     ctx.fillStyle='#CCAA66';
-    ctx.fillText(cfg.cytokineDesc,cx+cardW/2,statY+76);
+    const cytoLines=wrapText(cfg.cytokineDesc,cardW-24);
+    for(let li=0;li<cytoLines.length;li++) ctx.fillText(cytoLines[li],cx+cardW/2,statY+76+li*12);
+    const cytoOff=(cytoLines.length-1)*12;
 
     // Special death message
     ctx.font='9px Arial,sans-serif';
     ctx.fillStyle='#AA7777';
-    ctx.fillText('Morte: '+cfg.deathMsg,cx+cardW/2,statY+94);
+    ctx.fillText('Morte: '+cfg.deathMsg,cx+cardW/2,statY+94+cytoOff);
 
     // Select prompt
     if(isHover){
@@ -1335,7 +1353,8 @@ function drawGameOver(){
   ctx.fillText(cfg.deathMsg,GW/2,GH*0.13);ctx.shadowBlur=0;
 
   ctx.font='12px Arial,sans-serif';ctx.fillStyle='#DDAAAA';
-  ctx.fillText(cfg.deathDesc,GW/2,GH*0.13+30);
+  const ddLines=wrapText(cfg.deathDesc,GW*0.7);
+  for(let i=0;i<ddLines.length;i++) ctx.fillText(ddLines[i],GW/2,GH*0.13+30+i*16);
 
   // Neutro NET visual on death
   if(charType==='NEUTRO'){

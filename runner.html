@@ -17,8 +17,6 @@
     }
     canvas {
       display: block;
-      width: 100%;
-      height: 100%;
     }
   </style>
 </head>
@@ -37,6 +35,15 @@ const GW = 800;
 const GH = 450;
 canvas.width = GW;
 canvas.height = GH;
+
+function resizeCanvas(){
+  const ar=GW/GH,vw=window.innerWidth,vh=window.innerHeight;
+  let w,h;
+  if(vw/vh>ar){h=vh;w=h*ar;}else{w=vw;h=w/ar;}
+  canvas.style.width=w+'px';canvas.style.height=h+'px';
+  canvas.style.margin=((vh-h)/2)+'px auto 0';
+}
+window.addEventListener('resize',resizeCanvas);resizeCanvas();
 
 // --- Fixed game constants ---
 const GROUND_Y     = 360;

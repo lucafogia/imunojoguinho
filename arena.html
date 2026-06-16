@@ -8,7 +8,7 @@
     *{margin:0;padding:0;box-sizing:border-box;}
     html,body{width:100%;height:100%;overflow:hidden;background:#0D0515;
       touch-action:none;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none;}
-    canvas{display:block;width:100%;height:100%;}
+    canvas{display:block;}
   </style>
 </head>
 <body>
@@ -17,6 +17,14 @@
 const canvas=document.getElementById('game'),ctx=canvas.getContext('2d');
 const GW=800,GH=450;
 canvas.width=GW;canvas.height=GH;
+function resizeCanvas(){
+  const ar=GW/GH,vw=window.innerWidth,vh=window.innerHeight;
+  let w,h;
+  if(vw/vh>ar){h=vh;w=h*ar;}else{w=vw;h=w/ar;}
+  canvas.style.width=w+'px';canvas.style.height=h+'px';
+  canvas.style.margin=((vh-h)/2)+'px auto 0';
+}
+window.addEventListener('resize',resizeCanvas);resizeCanvas();
 const FPS=60,FT=1000/FPS;
 let lastTS=0,accum=0;
 
