@@ -54,7 +54,7 @@ const CHAR_CONFIG={
     bodyColors:['#CC99EE','#9966BB','#7744AA'],
     pseudoCol:'rgba(130,70,180,0.7)',
     eyeCol:'#660066', nucleusCol:'rgba(50,20,80,0.35)',
-    speed:2.6, radius:26, hpMax:100, hpDrain:0.02,
+    speed:2.6, radius:26, hpMax:85, hpDrain:0.045,
     cytokine:'TNF-α', cytokineDesc:'Speed boost + raio maior',
     deathMsg:'APOPTOSE!', deathDesc:'O macrófago não conseguiu manter sua energia e entrou em apoptose.',
     scoreLabel:'fagocitados', grows:true,
@@ -67,7 +67,7 @@ const CHAR_CONFIG={
     bodyColors:['#88BBFF','#5599DD','#3377BB'],
     pseudoCol:'rgba(60,100,200,0.7)',
     eyeCol:'#003366', nucleusCol:'rgba(20,40,80,0.35)',
-    speed:3.2, radius:22, hpMax:100, hpDrain:0.035,
+    speed:3.2, radius:22, hpMax:80, hpDrain:0.06,
     cytokine:'IL-8', cytokineDesc:'Burst respiratório AoE',
     deathMsg:'NETOSE!', deathDesc:'O neutrófilo liberou NETs e formou pus.',
     scoreLabel:'fagocitados', grows:false,
@@ -80,7 +80,7 @@ const CHAR_CONFIG={
     bodyColors:['#88DDBB','#55BB99','#339977'],
     pseudoCol:'rgba(60,170,130,0.7)',
     eyeCol:'#004433', nucleusCol:'rgba(20,60,50,0.35)',
-    speed:2.2, radius:26, hpMax:130, hpDrain:0.018,
+    speed:2.2, radius:26, hpMax:100, hpDrain:0.04,
     cytokine:'IL-10', cytokineDesc:'Aura de cura + regeneração',
     deathMsg:'APOPTOSE!', deathDesc:'Reparo incompleto - O macrófago M2 não conseguiu reparar o tecido a tempo.',
     scoreLabel:'reparados', grows:false,
@@ -113,10 +113,10 @@ let alerts=[];
 
 // Bacteria types
 const TYPES={
-  COCCUS:    {name:'Coccus (Staphylococcus)',  short:'Coccus',   col:'#55CC55',dk:'#338833',r:9, spd:0.5, flee:0,   fforce:0,  pts:1, hp:5,  shape:'circle'},
-  BACILLUS:  {name:'Bacilo (Escherichia coli)', short:'Bacilo',   col:'#4499DD',dk:'#336699',r:7, spd:0.9, flee:90,  fforce:0.4,pts:2, hp:8,  shape:'rod'},
-  SPIRILLUM: {name:'Espiroqueta (Treponema)',   short:'Espiroqueta',col:'#EE5544',dk:'#AA3322',r:6, spd:1.7, flee:140, fforce:0.7,pts:4, hp:3,  shape:'spiral'},
-  CAPSULADO: {name:'Pneumococo (encapsulado)',  short:'Capsulado',col:'#FFAA33',dk:'#BB7711',r:11,spd:0.3, flee:0,   fforce:0,  pts:6, hp:15, shape:'capsule', hits:2},
+  COCCUS:    {name:'Coccus (Staphylococcus)',  short:'Coccus',   col:'#55CC55',dk:'#338833',r:8, spd:0.7, flee:60,  fforce:0.3,pts:1, hp:5,  shape:'circle'},
+  BACILLUS:  {name:'Bacilo (Escherichia coli)', short:'Bacilo',   col:'#4499DD',dk:'#336699',r:6, spd:1.2, flee:120, fforce:0.6,pts:2, hp:8,  shape:'rod'},
+  SPIRILLUM: {name:'Espiroqueta (Treponema)',   short:'Espiroqueta',col:'#EE5544',dk:'#AA3322',r:5, spd:2.2, flee:180, fforce:0.9,pts:4, hp:3,  shape:'spiral'},
+  CAPSULADO: {name:'Pneumococo (encapsulado)',  short:'Capsulado',col:'#FFAA33',dk:'#BB7711',r:10,spd:0.5, flee:40,  fforce:0.2,pts:6, hp:18, shape:'capsule', hits:3},
 };
 
 // M2 target types
@@ -255,9 +255,9 @@ function spawnHazard(type){
   else if(edge===2){x=Math.random()*WORLD_W;y=WORLD_H+20;}
   else{x=-20;y=Math.random()*WORLD_H;}
 
-  const spd=type==='TOXO'?1.5:2.0;
-  const r=type==='TOXO'?12:8;
-  const dmg=type==='TOXO'?40:30;
+  const spd=type==='TOXO'?2.2:2.8;
+  const r=type==='TOXO'?13:9;
+  const dmg=type==='TOXO'?45:35;
   const name=type==='TOXO'?'Toxoplasma gondii':'Leishmania';
   const col=type==='TOXO'?'#BB9933':'#336633';
   const dk=type==='TOXO'?'#886622':'#224422';
@@ -350,7 +350,7 @@ function update(){
   if(charType==='M2' && P.power>0) P.r*=1.5;
 
   // Health drain
-  let drain=cfg.hpDrain+P.eaten*0.0003;
+  let drain=cfg.hpDrain+P.eaten*0.0008;
   // M2 IL-10 regen
   if(charType==='M2' && P.power>0){
     P.hp=Math.min(P.maxHp,P.hp+0.5);
@@ -436,8 +436,8 @@ function update(){
 
 function updateBacteria(){
   const e=P.eaten;
-  const maxBact=Math.min(35,8+Math.floor(e*0.5));
-  if(bacteria.filter(b=>!b.eating).length<maxBact && frame%40===0){
+  const maxBact=Math.min(20,5+Math.floor(e*0.3));
+  if(bacteria.filter(b=>!b.eating).length<maxBact && frame%60===0){
     let type='COCCUS';
     if(e>=30) type=['COCCUS','BACILLUS','SPIRILLUM','CAPSULADO'][Math.floor(Math.random()*4)];
     else if(e>=15) type=['COCCUS','BACILLUS','SPIRILLUM'][Math.floor(Math.random()*3)];
@@ -566,14 +566,14 @@ function updateM2Targets(){
 }
 
 function updateHazards(){
-  const threshold=charType==='M2'?20:15;
+  const threshold=charType==='M2'?12:8;
   if(P.eaten>=threshold){
     // Toxoplasma
-    if(frame%500===0 && hazards.length<3){
+    if(frame%300===0 && hazards.length<4){
       spawnHazard('TOXO');
     }
     // Leishmania (higher threshold)
-    if(P.eaten>=25 && frame%600===0 && hazards.length<4){
+    if(P.eaten>=18 && frame%350===0 && hazards.length<5){
       spawnHazard('LEISH');
     }
   }

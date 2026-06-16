@@ -54,7 +54,7 @@ const MACRO_W      = 85;
 const MACRO_H      = 55;
 const GRAVITY      = 0.52;
 const JUMP_FORCE   = -12;
-const BASE_SPEED   = 7;
+const BASE_SPEED   = 9;
 
 // --- Fixed timestep (60fps logic regardless of display Hz) ---
 const TARGET_FPS  = 60;
@@ -255,8 +255,8 @@ function update() {
   frame++;
 
   // Speed & difficulty - speed increases aggressively
-  speed = BASE_SPEED * (1 + score*0.0008);
-  if (speed > BASE_SPEED*4) speed = BASE_SPEED*4;
+  speed = BASE_SPEED * (1 + score*0.0012);
+  if (speed > BASE_SPEED*5) speed = BASE_SPEED*5;
 
   // Score
   if (frame%3===0) { score++; if (score%100===0) sndScore(); }
@@ -293,7 +293,7 @@ function update() {
   macro.pulse += 0.05;
   macro.pseudo += 0.03;
   // Approach rate decreases as score increases → game can go on forever
-  const approach = speed * Math.max(0.001, 0.0035 - score*0.0000015);
+  const approach = speed * Math.max(0.002, 0.005 - score*0.0000015);
   macro.targetX += approach;
   macro.x += (macro.targetX - macro.x) * 0.02;
   macro.y = GROUND_Y - MACRO_H*0.9;
@@ -303,8 +303,8 @@ function update() {
   }
 
   // --- Obstacles ---
-  const gap = Math.max(20, 50 - score*0.012);
-  if (frame - lastObsFrame > gap + Math.random()*30) { spawnObs(); lastObsFrame=frame; }
+  const gap = Math.max(14, 40 - score*0.015);
+  if (frame - lastObsFrame > gap + Math.random()*20) { spawnObs(); lastObsFrame=frame; }
 
   // Power-ups every ~600 frames after score 50
   if (score>50 && frame%400===0 && player.shield<=0) spawnPU();
