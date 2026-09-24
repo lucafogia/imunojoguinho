@@ -70,19 +70,19 @@ function sndLose(){tone(300,0.5,{type:'triangle',slide:70,vol:0.06});noiseBurst(
 const CX=400,CY=222,FIELD_R=200;
 const MODES={
   FACIL:  {key:'FACIL',  label:'Fácil',  start:16,max:64,divide:[12,18],mut:0.7, col:'#66DD88',desc:'Tumor lento, muta pouco.'},
-  MEDIO:  {key:'MEDIO',  label:'Médio',  start:24,max:76,divide:[7,11], mut:1.1, col:'#FFC24D',desc:'Equilibrado.'},
+  MEDIO:  {key:'MEDIO',  label:'Médio',  start:22,max:76,divide:[7,11], mut:1.1, col:'#FFC24D',desc:'Equilibrado.'},
   DIFICIL:{key:'DIFICIL',label:'Difícil',start:30,max:88,divide:[7,10], mut:1.4, col:'#FF6B6B',desc:'Cresce rápido, muta muito.'},
 };
 const modeKeys=['FACIL','MEDIO','DIFICIL'];
 const UNITS={
   T:  {key:'T',  name:'T CD8+',    cost:14,col:'#5CFF7A',spd:1.7,life:2100,killT:55,hot:'1',desc:'Mata células com MHC-I + antígeno. Encostar em PD-L1 a deixa EXAUSTA.'},
   NK: {key:'NK', name:'NK',        cost:16,col:'#FFE156',spd:1.6,life:2100,killT:60,hot:'2',desc:'Mata células SEM MHC-I ("missing self"). Ignora as que têm MHC-I.'},
-  CAR:{key:'CAR',name:'CAR-T',     cost:32,col:'#FF7BFF',spd:1.8,life:1800,killT:40,hot:'3',desc:'Mata por antígeno de superfície, sem MHC, e resiste ao PD-L1. Cara — e o tumor pode perder o antígeno.'},
+  CAR:{key:'CAR',name:'CAR-T',     cost:24,col:'#FF7BFF',spd:1.8,life:1800,killT:40,hot:'3',desc:'Mata por antígeno de superfície, sem MHC, e resiste ao PD-L1. Cara — e o tumor pode perder o antígeno.'},
   DC: {key:'DC', name:'Dendrítica',cost:18,col:'#FF9B3D',spd:0,  life:3600,killT:0, hot:'4',desc:'Solte perto dos RESTOS de células mortas (pontos amarelos): ela coleta antígeno e gera PRIMING — os pontos para soltar efetores e usar terapias.'},
 };
 const unitKeys=['T','NK','CAR','DC'];
 const THERAPIES={
-  APD1: {key:'APD1', name:'anti-PD-1',  cost:20,cd:1500,dur:900,col:'#FF7BFF',hot:'Q',desc:'15s: PD-L1 deixa de exaustar e as T exaustas acordam.'},
+  APD1: {key:'APD1', name:'anti-PD-1',  cost:20,cd:1200,dur:900,col:'#FF7BFF',hot:'Q',desc:'15s: PD-L1 deixa de exaustar e as T exaustas acordam.'},
   IFNG: {key:'IFNG', name:'IFN-γ',      cost:20,cd:1500,dur:600,col:'#37F0FF',hot:'W',desc:'10s: todo o tumor expressa MHC-I — visível às T, mas INVISÍVEL às NK.'},
   RADIO:{key:'RADIO',name:'Radio',      cost:30,cd:1800,dur:0,  col:'#FFE156',hot:'E',desc:'Clique no campo: mata uma região e libera antígeno para as dendríticas (efeito abscopal).'},
   CTLA: {key:'CTLA', name:'anti-CTLA-4',cost:20,cd:1800,dur:900,col:'#FF9B3D',hot:'R',desc:'15s: priming em dobro (renda ×2).'},
@@ -203,7 +203,7 @@ function update(){
   for(const c of tumor){
     c.wob+=0.03;if(c.flash>0)c.flash--;
     // só a borda prolifera (inibição por contato no interior do tumor)
-    c.divT--;if(c.divT<=0){c.divT=rnd(M.divide[0],M.divide[1])*60;if(tumor.length<M.max&&dist(c.x,c.y,CX,CY)>tRadius*0.5)divide(c);}
+    c.divT--;if(c.divT<=0){c.divT=rnd(M.divide[0],M.divide[1])*60*(c.pdl1?1.25:1);if(tumor.length<M.max&&dist(c.x,c.y,CX,CY)>tRadius*0.5)divide(c);} // PD-L1 tem custo: divide mais devagar
   }
   for(let i=0;i<tumor.length;i++){const a=tumor[i];a.x+=(CX-a.x)*0.0025;a.y+=(CY-a.y)*0.0025;
     for(let j=i+1;j<tumor.length;j++){const b=tumor[j];const dx=b.x-a.x,dy=b.y-a.y;const d=Math.hypot(dx,dy)||0.01;const min=a.r+b.r+1.5;
