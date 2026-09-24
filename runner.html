@@ -33,10 +33,19 @@
     #ovl .btn.small{font-size:9px;padding:9px;margin-top:8px;}
     #ovl .btn:focus-visible{outline:2px solid var(--ac);outline-offset:2px;}
     #ovl .btn:hover{filter:brightness(1.1);}
+  
+    /* Aviso para girar o celular (só em retrato + toque) */
+    #rotate{display:none;position:fixed;inset:0;z-index:20;background:#05070d;color:#fff;font-family:Fredoka,'Segoe UI',Arial,sans-serif;text-align:center;align-items:center;justify-content:center;flex-direction:column;gap:10px;padding:24px;}
+    #rotate .ico{font-size:72px;line-height:1;animation:rot 1.6s ease-in-out infinite;}
+    #rotate b{font-size:28px;letter-spacing:.06em;}
+    #rotate span{font-size:15px;opacity:.75;max-width:32ch;}
+    @keyframes rot{0%,100%{transform:rotate(0)}50%{transform:rotate(-90deg)}}
+    @media (orientation:portrait) and (pointer:coarse){#rotate{display:flex;}}
   </style>
 </head>
 <body>
 <canvas id="game"></canvas>
+<div id="rotate" role="alert"><div class="ico">📱</div><b>GIRE O CELULAR</b><span>Este jogo é em paisagem: deite a tela para jogar.</span></div>
 <div id="ovl" class="hide" role="dialog" aria-modal="true" aria-label="Pausa"><div class="card" id="card"></div></div>
 <script>
 // ========================================
@@ -47,8 +56,9 @@ const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 
 // --- Fixed internal resolution (zoom-proof) ---
-const GW = 800;
 const GH = 450;
+// Largura acompanha a proporção da tela: celular deitado (mais largo que 16:9) fica com a tela cheia
+const GW = Math.round(Math.min(1100,Math.max(800,GH*window.innerWidth/Math.max(1,window.innerHeight))));
 canvas.width = GW;
 canvas.height = GH;
 
@@ -913,7 +923,7 @@ function drawMenu() {
   // Controls
   ctx.font='bold 13px Fredoka,Arial,sans-serif';ctx.fillStyle='#FFDD88';
   const mob='ontouchstart' in window;
-  if(mob) ctx.fillText('TOQUE = Pular     DESLIZE = Abaixar',GW/2,GH*0.74);
+  if(mob) ctx.fillText('TOQUE ou DESLIZE ↑ = Pular   ·   DESLIZE ↓ = Abaixar (segure)',GW/2,GH*0.74);
   else    ctx.fillText('ESPAÇO / ↑ = Pular     ↓ = Abaixar (segure)',GW/2,GH*0.74);
 
   ctx.font='11px Fredoka,Arial,sans-serif';ctx.fillStyle='#44DDBB';
@@ -1140,28 +1150,34 @@ function stopDuck() {
 }
 
 // --- INPUT ---
-let touchSY=0, touchST=0;
+// Toque: gesto estilo Subway Surfers — deslizar para baixo abaixa (e segura), deslizar para cima ou tocar pula
+let touchSY=0, touchST=0, gesture=null;
 
 canvas.addEventListener('touchstart',(e)=>{
   e.preventDefault();
-  touchSY=e.touches[0].clientY; touchST=Date.now();
+  touchSY=e.touches[0].clientY; touchST=Date.now(); gesture=null;
   const p=canvasXY(e.touches[0].clientX,e.touches[0].clientY);
-  if(PAUSE_CFG.pausable.includes(state)&&pauseHit(p.x,p.y)){initAudio();togglePause();return;}
-  if(muteHit(p.x,p.y)){initAudio();toggleMute();return;}
-  if(HOME_STATES.includes(state)&&homeHit(p.x,p.y)){goHome();return;}
-  if(state==='menu'){initAudio();state='modeselect';return;}
-  if(state==='modeselect'){initAudio();pickMode(p.x,p.y);return;}
-  if((state==='gameover'||state==='won')&&Date.now()-gameOverTime>600){state='modeselect';return;}
+  if(PAUSE_CFG.pausable.includes(state)&&pauseHit(p.x,p.y)){gesture='ui';initAudio();togglePause();return;}
+  if(muteHit(p.x,p.y)){gesture='ui';initAudio();toggleMute();return;}
+  if(HOME_STATES.includes(state)&&homeHit(p.x,p.y)){gesture='ui';goHome();return;}
+  if(state==='menu'){gesture='ui';initAudio();state='modeselect';return;}
+  if(state==='modeselect'){gesture='ui';initAudio();pickMode(p.x,p.y);return;}
+  if((state==='gameover'||state==='won')&&Date.now()-gameOverTime>600){gesture='ui';state='modeselect';return;}
 },{passive:false});
 
-canvas.addEventListener('touchmove',(e)=>{e.preventDefault();},{passive:false});
+canvas.addEventListener('touchmove',(e)=>{
+  e.preventDefault();
+  if(state!=='playing'||gesture) return;
+  const dy=e.touches[0].clientY-touchSY;
+  if(dy>22){gesture='duck';doDuck(true);}       // deslizou para baixo: abaixa enquanto o dedo estiver na tela
+  else if(dy<-22){gesture='jump';doJump();}     // deslizou para cima: pula
+},{passive:false});
 
 canvas.addEventListener('touchend',(e)=>{
   e.preventDefault();
-  if(state!=='playing') return;
-  const dy=e.changedTouches[0].clientY-touchSY;
-  const dt=Date.now()-touchST;
-  if(dy>30&&dt<300) doDuck(); else doJump();
+  if(gesture==='duck'){stopDuck();gesture=null;return;}
+  if(gesture===null&&state==='playing') doJump(); // toque simples: pula
+  gesture=null;
 },{passive:false});
 
 document.addEventListener('keydown',(e)=>{
@@ -1253,6 +1269,10 @@ function togglePause(){
 document.addEventListener('keydown',e=>{if(e.code==='Escape'||e.code==='KeyP'){if(PAUSE_CFG.pausable.includes(state)||state==='paused'){e.preventDefault();togglePause();}}});
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&PAUSE_CFG.pausable.includes(state))togglePause();});
 
+
+// Ao girar o celular fora de uma partida, recarrega para recalcular a largura do canvas
+window.addEventListener('orientationchange',()=>{setTimeout(()=>{const want=Math.round(Math.min(1100,Math.max(800,GH*window.innerWidth/Math.max(1,window.innerHeight))));
+  if(Math.abs(want-GW)>60&&!['playing','countdown','dying','paused'].includes(state))location.reload();},350);});
 </script>
 </body>
 </html>
