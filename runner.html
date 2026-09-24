@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Rubik+Mono+One&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Rubik+Mono+One&family=Orbitron:wght@500;700;900&display=swap" rel="stylesheet">
   <title>ImmunoRun - Fuga Bacteriana</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -19,10 +19,25 @@
     canvas {
       display: block;
     }
+      :root{--ac:#BB66FF;}
+    /* ===== Pausa / instruções (overlay no estilo do catálogo immuno.games) ===== */
+    #ovl{position:fixed;inset:0;z-index:10;display:flex;align-items:center;justify-content:center;background:rgba(4,7,13,.86);backdrop-filter:blur(5px);padding:12px;overflow-y:auto;font-family:'Orbitron',ui-monospace,Menlo,monospace;color:#eaf6ff;touch-action:pan-y;}
+    #ovl.hide{display:none;}
+    #ovl .card{width:min(92vw,440px);max-height:94vh;overflow-y:auto;padding:22px 20px;text-align:center;background:linear-gradient(180deg,#0a1122,#070b18);clip-path:polygon(16px 0,100% 0,100% calc(100% - 16px),calc(100% - 16px) 100%,0 100%,0 16px);box-shadow:0 0 0 1px #1b2a4d,0 0 34px rgba(0,0,0,.6);}
+    #ovl .eyebrow{font-size:9px;letter-spacing:.24em;color:#7b8aa8;margin-bottom:8px;text-transform:uppercase;}
+    #ovl h2{margin:0 0 10px;font-size:17px;font-weight:900;letter-spacing:.08em;color:#fff;text-shadow:0 0 12px var(--ac);text-wrap:balance;}
+    #ovl .lz{text-align:left;font-size:11.5px;line-height:1.5;color:#c9d6ee;margin:9px 0;font-family:Fredoka,'Segoe UI',Arial,sans-serif;font-weight:500;}
+    #ovl .lk{display:block;font-family:'Orbitron',ui-monospace,monospace;font-size:9px;letter-spacing:.18em;margin-bottom:2px;}
+    #ovl .btn{display:block;width:100%;margin-top:12px;padding:13px 10px;border:0;cursor:pointer;font-family:inherit;font-weight:900;font-size:12px;letter-spacing:.14em;color:#04070d;background:linear-gradient(90deg,var(--ac),#fff 170%);clip-path:polygon(12px 0,100% 0,100% calc(100% - 12px),calc(100% - 12px) 100%,0 100%,0 12px);box-shadow:0 0 18px color-mix(in srgb,var(--ac) 55%,transparent);text-decoration:none;box-sizing:border-box;}
+    #ovl .btn.ghost{background:transparent;color:#9fb4d8;box-shadow:inset 0 0 0 1px #26365c;font-size:11px;padding:11px;}
+    #ovl .btn.small{font-size:9px;padding:9px;margin-top:8px;}
+    #ovl .btn:focus-visible{outline:2px solid var(--ac);outline-offset:2px;}
+    #ovl .btn:hover{filter:brightness(1.1);}
   </style>
 </head>
 <body>
 <canvas id="game"></canvas>
+<div id="ovl" class="hide" role="dialog" aria-modal="true" aria-label="Pausa"><div class="card" id="card"></div></div>
 <script>
 // ========================================
 // IMUNO RUN - Fuga Bacteriana
@@ -1073,7 +1088,7 @@ function render() {
   if(state==='countdown'){drawUI();drawCountdown();}
   if(state==='gameover'){drawGameOver();drawHomeBtn();}
   if(state==='won'){drawWin();drawHomeBtn();}
-  drawMuteBtn();
+  drawMuteBtn();if(PAUSE_CFG.pausable.includes(state))drawPauseBtn();
 }
 
 // --- ACTIONS ---
@@ -1131,6 +1146,7 @@ canvas.addEventListener('touchstart',(e)=>{
   e.preventDefault();
   touchSY=e.touches[0].clientY; touchST=Date.now();
   const p=canvasXY(e.touches[0].clientX,e.touches[0].clientY);
+  if(PAUSE_CFG.pausable.includes(state)&&pauseHit(p.x,p.y)){initAudio();togglePause();return;}
   if(muteHit(p.x,p.y)){initAudio();toggleMute();return;}
   if(HOME_STATES.includes(state)&&homeHit(p.x,p.y)){goHome();return;}
   if(state==='menu'){initAudio();state='modeselect';return;}
@@ -1170,6 +1186,7 @@ document.addEventListener('keyup',(e)=>{
 canvas.addEventListener('mousedown',(e)=>{
   if(e.button!==0)return;
   const p=canvasXY(e.clientX,e.clientY);
+  if(PAUSE_CFG.pausable.includes(state)&&pauseHit(p.x,p.y)){initAudio();togglePause();return;}
   if(muteHit(p.x,p.y)){initAudio();toggleMute();return;}
   if(HOME_STATES.includes(state)&&homeHit(p.x,p.y)){goHome();return;}
   if(state==='menu'){initAudio();state='modeselect';return;}
@@ -1199,6 +1216,43 @@ function gameLoop(timestamp) {
 initGame();
 state='menu';
 requestAnimationFrame(gameLoop);
+
+const PAUSE_BTN={x:GW-74,y:GH-34,w:28,h:24};
+const PAUSE_CFG={pausable:['playing','countdown'],
+ eyebrow:()=>'IMUNO RUN · '+MODES[mode].label.toUpperCase()+' · PAUSA',
+ title:()=>'FUGA BACTERIANA · '+Math.max(0,Math.ceil((targetFrames-elapsed)/60))+'s RESTANTES',
+ lessons:()=>[['OBJETIVO','#8CFF8C','Sobreviva '+MODES[mode].secs+'s sem ser fagocitado. A barra de PERIGO mostra o quanto o macrófago se aproximou: sobe com o tempo, salta a cada tombo e alivia a cada desvio limpo.'],
+  ['CONTROLES','#FFD34D','Espaço / ↑ / W pula · ↓ / S (segure) abaixa · no celular: toque pula, deslize para baixo abaixa.'],
+  ['LEGENDA','#37F0FF','Seta VERDE ^ = pule por cima (anticorpo, neutrófilo, complemento). Seta AMARELA ⌄ = abaixe (citocina flutuando). Biofilme = escudo por alguns segundos.'],
+  ['CONCEITO','#FF7BFF','Anticorpos opsonizam, o complemento marca e as citocinas recrutam: o macrófago fagocita o que foi sinalizado. Escapar do sistema imune é difícil por desenho.']],
+ restart:()=>startWithMode(mode), menu:()=>{state='menu';}};
+
+// ===== Pausa com instruções (overlay HTML, estrutura igual à do ImunoTropa) =====
+let prevState=null;
+function drawPauseBtn(){const b=PAUSE_BTN;ctx.save();ctx.fillStyle='rgba(0,0,0,0.35)';ctx.beginPath();ctx.roundRect(b.x,b.y,b.w,b.h,7);ctx.fill();ctx.strokeStyle='rgba(255,255,255,0.18)';ctx.lineWidth=1;ctx.stroke();ctx.font='700 12px '+FONT;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillStyle='rgba(255,255,255,0.85)';ctx.fillText('II',b.x+b.w/2,b.y+b.h/2+1);ctx.restore();}
+function pauseHit(x,y){const b=PAUSE_BTN;return x>=b.x&&x<=b.x+b.w&&y>=b.y&&y<=b.y+b.h;}
+function showOvl(html){const c=document.getElementById('card');c.innerHTML=html;const o=document.getElementById('ovl');o.classList.remove('hide');o.scrollTop=0;}
+function hideOvl(){document.getElementById('ovl').classList.add('hide');}
+function pauseHTML(){
+  const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  return '<div class="eyebrow">'+esc(PAUSE_CFG.eyebrow())+'</div><h2>'+esc(PAUSE_CFG.title())+'</h2>'
+    +PAUSE_CFG.lessons().map(([k,c,t])=>'<div class="lz"><span class="lk" style="color:'+c+'">'+esc(k)+'</span>'+esc(t)+'</div>').join('')
+    +'<button class="btn" id="pRs">CONTINUAR</button>'
+    +'<button class="btn ghost" id="pRt">REINICIAR</button>'
+    +'<button class="btn ghost" id="pMn">SAIR PARA O MENU</button>'
+    +'<a class="btn ghost small" id="pHub" href="index.html">VOLTAR AO HUB</a>';
+}
+function togglePause(){
+  if(PAUSE_CFG.pausable.includes(state)){prevState=state;state='paused';showOvl(pauseHTML());
+    document.getElementById('pRs').onclick=togglePause;
+    document.getElementById('pRt').onclick=()=>{hideOvl();PAUSE_CFG.restart();};
+    document.getElementById('pMn').onclick=()=>{hideOvl();PAUSE_CFG.menu();};
+    document.getElementById('pRs').focus();
+  } else if(state==='paused'){state=prevState;hideOvl();}
+}
+document.addEventListener('keydown',e=>{if(e.code==='Escape'||e.code==='KeyP'){if(PAUSE_CFG.pausable.includes(state)||state==='paused'){e.preventDefault();togglePause();}}});
+document.addEventListener('visibilitychange',()=>{if(document.hidden&&PAUSE_CFG.pausable.includes(state))togglePause();});
+
 </script>
 </body>
 </html>
