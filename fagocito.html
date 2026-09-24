@@ -159,9 +159,9 @@ const CHAR_CONFIG={
 // --- Modos de dificuldade (meta = sobreviver ao tempo) ---
 // divide = intervalo (s) entre divisões de cada bactéria; arrive = frames entre novas chegadas; maxLoad = carga que perde
 const MODES={
-  FACIL:  {key:'FACIL',  label:'Fácil',  secs:60,  divide:[16,26], arrive:330, maxLoad:34, hazardEvery:600, hazardMax:1, col:'#66DD88'},
-  MEDIO:  {key:'MEDIO',  label:'Médio',  secs:90,  divide:[12,19], arrive:260, maxLoad:38, hazardEvery:420, hazardMax:2, col:'#FFC24D'},
-  DIFICIL:{key:'DIFICIL',label:'Difícil',secs:120, divide:[9,14],  arrive:200, maxLoad:42, hazardEvery:300, hazardMax:3, col:'#FF6B6B'},
+  FACIL:  {key:'FACIL',  label:'Fácil',  secs:60,  divide:[13,20], arrive:280, maxLoad:34, hazardEvery:600, hazardMax:1, col:'#66DD88'},
+  MEDIO:  {key:'MEDIO',  label:'Médio',  secs:90,  divide:[9,15],  arrive:200, maxLoad:38, hazardEvery:420, hazardMax:2, col:'#FFC24D'},
+  DIFICIL:{key:'DIFICIL',label:'Difícil',secs:120, divide:[7,11],  arrive:150, maxLoad:42, hazardEvery:300, hazardMax:3, col:'#FF6B6B'},
 };
 function rnd(r){return r[0]+Math.random()*(r[1]-r[0]);}
 // carga atual de infecção (M1/neutrófilo) ou degradação (M2)
@@ -288,10 +288,10 @@ function init(){
 
   if(charType==='M2'){
     introduced={DETRITO:true,NECROSE:false,APOPTOSE:false,FIBROSE:false};
-    for(let i=0;i<8;i++) spawnTarget('DETRITO');
+    for(let i=0;i<10;i++) spawnTarget('DETRITO');
   } else {
     introduced={COCCUS:true,BACILLUS:false,SPIRILLUM:false,CAPSULADO:false};
-    for(let i=0;i<8;i++) spawnBact('COCCUS');
+    for(let i=0;i<10;i++) spawnBact('COCCUS');
   }
 }
 
