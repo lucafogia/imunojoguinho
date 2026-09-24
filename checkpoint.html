@@ -77,12 +77,12 @@ const modeKeys=['FACIL','MEDIO','DIFICIL'];
 const UNITS={
   T:  {key:'T',  name:'T CD8+',    cost:14,col:'#5CFF7A',spd:1.7,life:2100,killT:55,hot:'1',desc:'Mata células com MHC-I + antígeno. Encostar em PD-L1 a deixa EXAUSTA.'},
   NK: {key:'NK', name:'NK',        cost:16,col:'#FFE156',spd:1.6,life:2100,killT:60,hot:'2',desc:'Mata células SEM MHC-I ("missing self"). Ignora as que têm MHC-I.'},
-  CAR:{key:'CAR',name:'CAR-T',     cost:32,col:'#FF7BFF',spd:1.8,life:1800,killT:40,hot:'3',desc:'Mata por antígeno de superfície, sem precisar de MHC. Cara — e o tumor pode perder o antígeno.'},
+  CAR:{key:'CAR',name:'CAR-T',     cost:32,col:'#FF7BFF',spd:1.8,life:1800,killT:40,hot:'3',desc:'Mata por antígeno de superfície, sem MHC, e resiste ao PD-L1. Cara — e o tumor pode perder o antígeno.'},
   DC: {key:'DC', name:'Dendrítica',cost:18,col:'#FF9B3D',spd:0,  life:3600,killT:0, hot:'4',desc:'Solte perto dos RESTOS de células mortas (pontos amarelos): ela coleta antígeno e gera PRIMING — os pontos para soltar efetores e usar terapias.'},
 };
 const unitKeys=['T','NK','CAR','DC'];
 const THERAPIES={
-  APD1: {key:'APD1', name:'anti-PD-1',  cost:25,cd:1800,dur:720,col:'#FF7BFF',hot:'Q',desc:'12s: PD-L1 deixa de exaustar e as T exaustas acordam.'},
+  APD1: {key:'APD1', name:'anti-PD-1',  cost:20,cd:1500,dur:900,col:'#FF7BFF',hot:'Q',desc:'15s: PD-L1 deixa de exaustar e as T exaustas acordam.'},
   IFNG: {key:'IFNG', name:'IFN-γ',      cost:20,cd:1500,dur:600,col:'#37F0FF',hot:'W',desc:'10s: todo o tumor expressa MHC-I — visível às T, mas INVISÍVEL às NK.'},
   RADIO:{key:'RADIO',name:'Radio',      cost:30,cd:1800,dur:0,  col:'#FFE156',hot:'E',desc:'Clique no campo: mata uma região e libera antígeno para as dendríticas (efeito abscopal).'},
   CTLA: {key:'CTLA', name:'anti-CTLA-4',cost:20,cd:1800,dur:900,col:'#FF9B3D',hot:'R',desc:'15s: priming em dobro (renda ×2).'},
@@ -104,7 +104,7 @@ const FACTS=[
 ];
 const LEGEND=[
   ['#37F0FF','Anel CIANO = MHC-I: a célula tumoral apresenta antígeno às T CD8.'],
-  ['#FF7BFF','Halo MAGENTA = PD-L1: quem encostar (T, CAR-T) fica exausto.'],
+  ['#FF7BFF','Halo MAGENTA = PD-L1: T CD8 que encostar fica exausta (anti-PD-1 acorda; CAR-T e NK resistem).'],
   ['#FFE156','Pontos AMARELOS = antígeno de superfície (alvo da CAR-T).'],
   ['#5CFF7A','Cada clone que você elimina SELECIONA os sobreviventes: o tumor evolui contra a sua estratégia.'],
 ];
@@ -147,7 +147,7 @@ function divide(p){
   let mut=false;
   if(t.mhc1&&Math.random()<(0.04+0.26*pT)*k){t.mhc1=false;mut=true;}
   else if(!t.mhc1&&Math.random()<(0.03+0.30*pNK)*k){t.mhc1=true;mut=true;}
-  if(!t.pdl1&&Math.random()<(0.04+0.22*pT)*k){t.pdl1=true;mut=true;}
+  if(!t.pdl1&&Math.random()<(0.03+0.15*pT)*k){t.pdl1=true;mut=true;}
   if(t.ag&&Math.random()<(0.015+0.30*pC)*k){t.ag=false;mut=true;}
   const a=Math.random()*6.28;const nc=makeCell(p.x+Math.cos(a)*9,p.y+Math.sin(a)*9,t);
   tumor.push(nc);if(mut){stats.mutations++;nc.flash=24;sndMutate();}
@@ -232,7 +232,7 @@ function update(){
     const spd=cfg.spd*(inFog?0.62:1);
     if(d>tg.r+7){u.x+=(tg.x-u.x)/d*spd;u.y+=(tg.y-u.y)/d*spd;u.t=0;}
     else{
-      if(u.type!=='NK'&&tg.pdl1&&!apd1){u.st='exhausted';u.t=360;u.target=null;stats.exhausted++;addText(u.x,u.y-14,'EXAUSTA (PD-L1)','#FF7BFF',10);sndExhaust();continue;}
+      if(u.type==='T'&&tg.pdl1&&!apd1){u.st='exhausted';u.t=180;u.target=null;stats.exhausted++;addText(u.x,u.y-14,'EXAUSTA (PD-L1)','#FF7BFF',10);sndExhaust();continue;}
       u.t++;if(u.t>=cfg.killT){killCell(tg,u.type);u.t=0;u.target=null;}
     }
   }
@@ -423,7 +423,7 @@ function drawModeSelect(){
   const lx=250,lw=GW-270;let yy=78;
   for(const [col,txt] of LEGEND){ctx.fillStyle=col;ctx.beginPath();ctx.arc(lx+6,yy-4,5,0,Math.PI*2);ctx.fill();ctx.font='500 12px '+FONT;ctx.textAlign='left';ctx.fillStyle='#E6EAF5';const ls=wrapText(txt,lw-30);for(let j=0;j<ls.length;j++)ctx.fillText(ls[j],lx+20,yy+j*15);yy+=ls.length*15+12;}
   // efetores
-  const eff=[['T','verde: precisa de MHC-I + antígeno'],['NK','amarela: mata quem NÃO tem MHC-I'],['CAR','rosa: mata por antígeno, sem MHC'],['DC','restos → PRIMING (seus pontos)']];
+  const eff=[['T','verde: precisa de MHC-I + antígeno'],['NK','amarela: mata quem NÃO tem MHC-I'],['CAR','rosa: por antígeno, ignora PD-L1'],['DC','restos → PRIMING (seus pontos)']];
   eff.forEach(([k,d],i)=>{const bx=60+i*185,by=258;drawUnit({type:k,x:bx,y:by,st:'seek',t:0,life:999,wob:Date.now()*0.003});ctx.font='500 10px '+FONT;ctx.textAlign='left';ctx.fillStyle=UNITS[k].col;ctx.fillText(UNITS[k].name,bx+14,by-2);ctx.fillStyle='rgba(230,235,255,0.75)';ctx.fillText(d,bx+14,by+11);});
   ctx.font='500 12px '+FONT;ctx.textAlign='center';ctx.fillStyle='#CDBBEE';ctx.fillText('Vença eliminando todas as células. Perca se o tumor atingir o limite (escape / invasão do tecido).',GW/2,318);
   for(const r of modeRects()){const M=MODES[r.key];const hov=hitR(r,mouseX,mouseY);pill(r.x,r.y,r.w,r.h,12,hov?'rgba(255,255,255,0.1)':'rgba(255,255,255,0.04)',M.col);
@@ -507,7 +507,7 @@ const PAUSE_CFG={pausable:['playing'],
  lessons:()=>[['OBJETIVO','#5CFF7A','Elimine todas as células tumorais antes que o tumor atinja '+MODES[mode].max+' (escape / invasão do tecido). Agora: '+tumor.length+' células.'],
   ['CONTROLES','#FFE156','Clique no campo solta a célula selecionada · 1–4 escolhe T, NK, CAR-T, dendrítica · Q/W/E/R terapias · Radio pede um clique de mira.'],
   ['DENDRÍTICA','#FF9B3D','Ela não mata: solte-a perto dos restos de células mortas. Ela coleta antígeno e gera PRIMING (seus pontos). Sem ela, você fica sem pontos para novas células.'],
-  ['LEITURA','#37F0FF','Anel CIANO = MHC-I (alvo das T). Halo MAGENTA = PD-L1 (exausta quem encosta). Pontos AMARELOS = antígeno (alvo da CAR-T). NK mata quem NÃO tem MHC-I.'],
+  ['LEITURA','#37F0FF','Anel CIANO = MHC-I (alvo das T). Halo MAGENTA = PD-L1 (exausta as T; anti-PD-1 resolve, CAR-T e NK resistem). Pontos AMARELOS = antígeno (alvo da CAR-T). NK mata quem NÃO tem MHC-I.'],
   ['CONCEITO','#FF7BFF','Imunoedição: cada clone eliminado seleciona os sobreviventes. Monoterapia falha; combine efetores e checkpoints.']],
  restart:()=>init(), menu:()=>{state='menu';}};
 
