@@ -3,19 +3,20 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap" rel="stylesheet">
   <title>Imunojoguinho — Jogos do Sistema Imunológico</title>
   <style>
     *{margin:0;padding:0;box-sizing:border-box;}
     html,body{width:100%;height:100%;overflow:hidden;background:#0D0515;
-      font-family:'Segoe UI',Arial,Helvetica,sans-serif;
+      font-family:Fredoka,'Segoe UI',Arial,Helvetica,sans-serif;
       touch-action:none;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none;}
     canvas{display:block;width:100%;height:100%;position:absolute;top:0;left:0;z-index:0;}
     .hub{position:relative;z-index:1;width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;overflow-y:auto;}
     .title-area{text-align:center;margin-bottom:8px;pointer-events:none;}
     .title{font-size:clamp(24px,5vw,42px);font-weight:800;background:linear-gradient(90deg,#FF8888,#FFCC77,#88BBFF);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;text-shadow:none;letter-spacing:-0.5px;line-height:1.2;}
     .subtitle{font-size:clamp(10px,2vw,14px);color:rgba(255,220,200,0.6);margin-top:4px;}
-    .cards{display:flex;gap:clamp(8px,2vw,18px);flex-wrap:wrap;justify-content:center;padding:0 12px;max-width:900px;}
-    .card{width:clamp(200px,28vw,260px);background:rgba(35,25,55,0.85);border:1.5px solid rgba(150,130,200,0.25);border-radius:14px;padding:clamp(12px,2vw,20px);cursor:pointer;transition:transform 0.18s,border-color 0.25s,box-shadow 0.25s;text-decoration:none;display:flex;flex-direction:column;align-items:center;position:relative;overflow:hidden;}
+    .cards{display:flex;gap:clamp(8px,2vw,18px);flex-wrap:wrap;justify-content:center;padding:0 12px;max-width:1180px;}
+    .card{width:clamp(190px,21vw,250px);background:rgba(35,25,55,0.85);border:1.5px solid rgba(150,130,200,0.25);border-radius:14px;padding:clamp(12px,2vw,20px);cursor:pointer;transition:transform 0.18s,border-color 0.25s,box-shadow 0.25s;text-decoration:none;display:flex;flex-direction:column;align-items:center;position:relative;overflow:hidden;}
     .card:hover,.card:active{transform:translateY(-4px) scale(1.02);border-color:rgba(200,180,255,0.5);box-shadow:0 8px 30px rgba(120,80,200,0.2);}
     .card-stripe{position:absolute;top:0;left:0;right:0;height:4px;border-radius:14px 14px 0 0;opacity:0.7;}
     .card-icon{width:64px;height:64px;border-radius:50%;margin:8px 0 10px;display:flex;align-items:center;justify-content:center;font-size:28px;border:2px solid rgba(255,255,255,0.1);position:relative;overflow:hidden;}
@@ -64,8 +65,8 @@
       </div>
       <div class="card-text">
         <div class="card-title">Jogo do Fagócito</div>
-        <div class="card-desc">Controle um macrófago ou neutrófilo e fagocite patógenos! Modo livre com power-ups e citocinas.</div>
-        <span class="card-tag" style="background:rgba(153,85,204,0.3);">AÇÃO / LIVRE</span>
+        <div class="card-desc">Seja um macrófago M1, um neutrófilo ou um M2. Coma patógenos, fuja dos protozoários e sobreviva ao tempo sem ficar sem energia.</div>
+        <span class="card-tag" style="background:rgba(153,85,204,0.3);">AÇÃO · 60–120s</span>
       </div>
     </a>
 
@@ -77,8 +78,8 @@
       </div>
       <div class="card-text">
         <div class="card-title">Imuno Run</div>
-        <div class="card-desc">Seja uma bactéria fugindo do macrófago! Desvie de anticorpos, neutrófilos e complemento.</div>
-        <span class="card-tag" style="background:rgba(85,187,85,0.3);">ENDLESS RUNNER</span>
+        <div class="card-desc">Seja uma bactéria fugindo do macrófago! Pule anticorpos e neutrófilos, abaixe das citocinas e sobreviva ao cerco.</div>
+        <span class="card-tag" style="background:rgba(85,187,85,0.3);">RUNNER · 60–120s</span>
       </div>
     </a>
 
@@ -89,15 +90,29 @@
         <canvas id="icon-arena" width="64" height="64"></canvas>
       </div>
       <div class="card-text">
-        <div class="card-title">Arena Imunológica</div>
-        <div class="card-desc">Tower defense! Posicione células imunes para defender o tecido contra bactérias, helmintos e tumores.</div>
-        <span class="card-tag" style="background:rgba(255,136,102,0.3);">TOWER DEFENSE / 5 FASES</span>
+        <div class="card-title">Memória Imune</div>
+        <div class="card-desc">Tower defense: defenda o tecido e construa memória imunológica — resposta primária, secundária, especificidade e vacinação.</div>
+        <span class="card-tag" style="background:rgba(255,136,102,0.3);">TOWER DEFENSE · 5 FASES</span>
+      </div>
+    </a>
+
+    <!-- Card 4: Checkpoint -->
+    <a class="card" href="checkpoint.html" id="card-cp">
+      <div class="card-stripe" style="background:linear-gradient(90deg,#37F0FF,#FF7BFF);"></div>
+      <div class="card-icon" style="background:radial-gradient(circle at 35% 35%,#1B2FA8,#02040A);">
+        <canvas id="icon-cp" width="64" height="64"></canvas>
+      </div>
+      <div class="card-text">
+        <div class="card-title">Checkpoint</div>
+        <div class="card-desc">Imunidade tumoral: ataque o tumor com T CD8, NK e CAR-T — mas cada clone morto seleciona os sobreviventes. Imunoedição e checkpoints.</div>
+        <span class="card-tag" style="background:rgba(55,240,255,0.25);">ESTRATÉGIA · IMUNOEDIÇÃO</span>
       </div>
     </a>
   </div>
 
   <div class="footer">
     <p>Toque/clique em um jogo para começar — funciona no celular!</p>
+    <p class="gh"><a href="catalogo.html" style="color:rgba(200,180,240,0.7);pointer-events:auto;text-decoration:none;">Ver as fichas dos jogos (formato catálogo) →</a></p>
   </div>
 </div>
 
@@ -310,6 +325,26 @@ function drawIconArena(t) {
   x.fill();
 }
 
+function drawIconCP(t) {
+  const c = document.getElementById('icon-cp');
+  if (!c) return;
+  const x = c.getContext('2d');
+  x.clearRect(0, 0, 64, 64);
+  // aglomerado tumoral (imunofluorescência)
+  for (let i = 0; i < 7; i++) {
+    const a = i * 0.9 + t * 0.2, d = i ? 8 + (i % 3) * 5 : 0;
+    const px = 32 + Math.cos(a) * d, py = 34 + Math.sin(a) * d;
+    if (i % 3 === 0) { x.fillStyle = 'rgba(255,123,255,0.35)'; x.beginPath(); x.arc(px, py, 10, 0, Math.PI * 2); x.fill(); }
+    x.fillStyle = '#3557E8'; x.beginPath(); x.arc(px, py, 6, 0, Math.PI * 2); x.fill();
+    if (i % 2 === 0) { x.strokeStyle = '#37F0FF'; x.lineWidth = 1.2; x.beginPath(); x.arc(px, py, 7.5, 0, Math.PI * 2); x.stroke(); }
+  }
+  // efetores orbitando
+  for (let i = 0; i < 3; i++) {
+    const a = t * 0.8 + i * 2.1, px = 32 + Math.cos(a) * 26, py = 34 + Math.sin(a) * 22;
+    x.fillStyle = i === 1 ? '#FFE156' : '#5CFF7A'; x.beginPath(); x.arc(px, py, 4, 0, Math.PI * 2); x.fill();
+  }
+}
+
 // Animation loop
 function animLoop() {
   const t = Date.now() * 0.001;
@@ -317,6 +352,7 @@ function animLoop() {
   drawIconFago(t);
   drawIconRunner(t);
   drawIconArena(t);
+  drawIconCP(t);
   requestAnimationFrame(animLoop);
 }
 animLoop();

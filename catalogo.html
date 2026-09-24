@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <title>Imunojoguinho — Fichas dos jogos</title>
+  <style>
+    :root{
+      --bg:#F3F0E9; --paper:#FFFFFF; --ink:#1D2A24; --muted:#5B6B63; --line:#E3DED3;
+      --green:#0F4D3C; --green-soft:#E6F0EB; --accent:#C8412B; --tag:#EAF2EE; --tag-ink:#25443A;
+      --mono:ui-monospace,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+      --sans:Inter,"Segoe UI",system-ui,-apple-system,Arial,sans-serif;
+    }
+    *{box-sizing:border-box;margin:0;padding:0}
+    html,body{background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.5}
+    body{padding:28px 20px 60px}
+    .wrap{max-width:1120px;margin:0 auto}
+
+    header{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:40px}
+    .brand{font-family:var(--mono);font-weight:600;letter-spacing:-0.02em;font-size:15px;color:var(--green)}
+    .brand span{opacity:.55}
+    nav a{font-size:13px;color:var(--ink);text-decoration:none;margin-left:18px}
+    nav a.btn{border:1.5px solid var(--green);border-radius:999px;padding:7px 14px;color:var(--green);font-weight:600}
+
+    .hero{display:grid;grid-template-columns:1.1fr .9fr;gap:36px;align-items:center;margin-bottom:56px}
+    .eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-bottom:12px}
+    h1{font-size:clamp(34px,5vw,54px);line-height:1.02;letter-spacing:-0.03em;color:var(--green);margin-bottom:16px}
+    h1 em{font-style:normal;color:var(--ink)}
+    .lead{font-size:17px;color:var(--muted);max-width:52ch;margin-bottom:22px}
+    .meta{font-family:var(--mono);font-size:12px;color:var(--muted)}
+
+    .plate{background:var(--paper);border:1px solid var(--line);border-radius:18px;padding:22px 24px;box-shadow:0 10px 30px rgba(20,40,30,.06)}
+    .plate h3{font-size:15px;margin-bottom:4px}
+    .plate .sub{font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:14px}
+    .wells{display:grid;grid-template-columns:repeat(12,1fr);gap:6px}
+    .well{aspect-ratio:1;border-radius:50%;border:1.5px solid #D9D3C6;background:#F7F4EE}
+    .well.on{background:var(--accent);border-color:var(--accent);box-shadow:inset 0 0 0 3px #F7C7BE}
+    .well.new{background:var(--green);border-color:var(--green);box-shadow:inset 0 0 0 3px #BFE0D0;animation:pulse 2.2s ease-in-out infinite}
+    @keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}
+    .legend{display:flex;gap:16px;margin-top:14px;font-family:var(--mono);font-size:11px;color:var(--muted);flex-wrap:wrap}
+    .legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:-1px}
+
+    .section-title{font-size:clamp(24px,3vw,34px);letter-spacing:-0.02em;color:var(--ink);margin-bottom:6px}
+    .section-sub{color:var(--muted);margin-bottom:26px;max-width:70ch}
+
+    .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:22px}
+    .card{background:var(--paper);border:1px solid var(--line);border-radius:18px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 10px 30px rgba(20,40,30,.05);transition:transform .2s,box-shadow .2s}
+    .card:hover{transform:translateY(-3px);box-shadow:0 16px 40px rgba(20,40,30,.1)}
+    .cover{position:relative;height:210px;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#0D0515}
+    .cover canvas{position:absolute;inset:0;width:100%;height:100%}
+    .cover .pos{position:absolute;top:12px;left:12px;background:#FFF;color:var(--ink);font-family:var(--mono);font-size:11px;font-weight:700;padding:4px 8px;border-radius:999px}
+    .cover .ttl{position:relative;font-family:Fredoka,var(--sans);font-weight:700;font-size:34px;letter-spacing:-0.01em;text-align:center;line-height:1;padding:0 16px}
+    .cover .tag{position:absolute;bottom:12px;left:0;right:0;text-align:center;font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,.7)}
+    .body{padding:20px 22px 22px;display:flex;flex-direction:column;gap:12px;flex:1}
+    .body h2{font-size:22px;letter-spacing:-0.02em;line-height:1.1}
+    .kicker{font-family:var(--mono);font-size:11px;color:var(--accent);letter-spacing:.02em;margin-top:-6px}
+    .desc{font-size:14px;color:#33413B}
+    .goals{border-top:1px solid var(--line);padding-top:12px}
+    .goals .lbl{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
+    .goals ul{list-style:none;display:flex;flex-direction:column;gap:6px}
+    .goals li{font-size:13px;padding-left:16px;position:relative;color:#33413B}
+    .goals li::before{content:"";position:absolute;left:0;top:8px;width:6px;height:6px;border-radius:50%;background:var(--green)}
+    .tags{display:flex;flex-wrap:wrap;gap:6px}
+    .tags span{background:var(--tag);color:var(--tag-ink);font-size:11px;font-weight:600;padding:4px 9px;border-radius:999px}
+    .tags span.lvl{background:#F5EEDD;color:#5A4A1E}
+    .foot{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:auto;padding-top:6px}
+    .foot .who{font-family:var(--mono);font-size:11px;color:var(--muted)}
+    .play{background:var(--green);color:#FFF;text-decoration:none;font-weight:600;font-size:13px;padding:10px 16px;border-radius:10px;display:inline-flex;align-items:center;gap:8px;white-space:nowrap}
+    .play:hover{background:#0B3B2E}
+
+    .fit{margin-top:56px;background:var(--green);color:#E8F1EC;border-radius:18px;padding:28px 30px;display:grid;grid-template-columns:1.2fr 1fr;gap:28px}
+    .fit h3{font-size:22px;letter-spacing:-0.02em;margin-bottom:10px;color:#FFF}
+    .fit p{font-size:14px;opacity:.9;max-width:60ch}
+    .fit ul{list-style:none;display:flex;flex-direction:column;gap:8px;font-size:14px}
+    .fit li{padding-left:18px;position:relative}
+    .fit li::before{content:"→";position:absolute;left:0;opacity:.7}
+    .fit .lbl{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;opacity:.7;margin-bottom:10px}
+
+    footer{margin-top:40px;font-family:var(--mono);font-size:11px;color:var(--muted);display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
+    @media(max-width:820px){.hero,.fit{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand">imunojoguinho <span>· proposta de jogos</span></div>
+    <nav>
+      <a href="#fichas">Fichas</a>
+      <a href="#encaixe">Como se encaixam</a>
+      <a class="btn" href="index.html">Abrir o hub dos jogos</a>
+    </nav>
+  </header>
+
+  <section class="hero">
+    <div>
+      <div class="eyebrow">Quatro experiências prontas para o navegador</div>
+      <h1>Imunologia para jogar — <em>quatro jogos novos</em> para o catálogo.</h1>
+      <p class="lead">Ação, runner, tower defense e estratégia, cada um construído em torno de um conceito que o jogador vive na mão: fagocitose e ativação celular, a perspectiva do patógeno, a memória imunológica e a imunoedição do tumor. Sem cadastro, direto no navegador, funciona no celular.</p>
+      <div class="meta">Um arquivo HTML por jogo · uso livre em sala de aula · fichas no formato do catálogo para facilitar a avaliação</div>
+    </div>
+    <div class="plate">
+      <h3>Onde entrariam na placa</h3>
+      <div class="sub">3 poços ocupados hoje · 4 propostos (B1–B4)</div>
+      <div class="wells" id="wells"></div>
+      <div class="legend"><span><i style="background:var(--accent)"></i>publicados</span><span><i style="background:var(--green)"></i>propostos</span><span><i style="background:#F7F4EE;border:1.5px solid #D9D3C6"></i>livres</span></div>
+    </div>
+  </section>
+
+  <h2 class="section-title" id="fichas">Fichas dos jogos</h2>
+  <p class="section-sub">Cada ficha traz a mecânica, os objetivos de aprendizagem e o público — do jeito que um professor precisa para decidir se usa em aula.</p>
+
+  <div class="cards">
+
+    <!-- B1 -->
+    <article class="card">
+      <div class="cover">
+        <canvas id="cv-runner" width="420" height="210"></canvas>
+        <span class="pos">B1</span>
+        <div class="ttl" style="color:#B9FFB9;text-shadow:0 0 18px rgba(120,255,120,.75),0 0 40px rgba(120,255,120,.35)">Imuno Run</div>
+        <div class="tag">Fuga bacteriana</div>
+      </div>
+      <div class="body">
+        <h2>Imuno Run</h2>
+        <div class="kicker">Do lado do patógeno</div>
+        <p class="desc">Você é uma bactéria que invadiu o tecido — e o macrófago está atrás de você. Pule anticorpos, neutrófilos e complemento, abaixe das citocinas e sobreviva ao cerco por 60, 90 ou 120 segundos. Cada tombo aproxima o fagócito; cada desvio limpo alivia a pressão.</p>
+        <div class="goals">
+          <div class="lbl">Ao jogar, você vai</div>
+          <ul>
+            <li>Reconhecer os componentes da resposta inata e humoral que um patógeno enfrenta: anticorpos, neutrófilos, complemento e citocinas</li>
+            <li>Entender a fagocitose como desfecho da perseguição — opsonização e reconhecimento facilitam a captura</li>
+            <li>Ver a resposta imune pela perspectiva do invasor e perceber por que "escapar" é difícil</li>
+          </ul>
+        </div>
+        <div class="tags"><span>Imunidade inata</span><span>Resposta a infecções</span><span class="lvl">Ensino médio</span><span class="lvl">~3 min por partida</span></div>
+        <div class="foot"><div class="who">Luca Foggia</div><a class="play" href="runner.html">Jogar agora <span>→</span></a></div>
+      </div>
+    </article>
+
+    <!-- B2 -->
+    <article class="card">
+      <div class="cover">
+        <canvas id="cv-fago" width="420" height="210"></canvas>
+        <span class="pos">B2</span>
+        <div class="ttl" style="color:#EBD2FF;text-shadow:0 0 18px rgba(204,85,255,.8),0 0 40px rgba(204,85,255,.4)">Jogo do Fagócito</div>
+        <div class="tag">Coma · repare · sobreviva</div>
+      </div>
+      <div class="body">
+        <h2>Jogo do Fagócito</h2>
+        <div class="kicker">Três células, três missões</div>
+        <p class="desc">Controle um macrófago M1, um neutrófilo ou um macrófago M2. Fagocite bactérias (ou repare o tecido, no M2) para manter a energia e fuja dos protozoários intracelulares — ou destrua-os quando a célula estiver ativada por citocinas. O M2, permissivo, só consegue fugir.</p>
+        <div class="goals">
+          <div class="lbl">Ao jogar, você vai</div>
+          <ul>
+            <li>Diferenciar os papéis de macrófago M1, neutrófilo e macrófago M2: fagocitose, resposta rápida de curta duração e reparo tecidual</li>
+            <li>Relacionar a ativação celular (TNF-α, IL-8, IL-10) com a capacidade de eliminar parasitas intracelulares como <em>Toxoplasma</em> e <em>Leishmania</em></li>
+            <li>Reconhecer a cápsula bacteriana como mecanismo de resistência à fagocitose</li>
+          </ul>
+        </div>
+        <div class="tags"><span>Imunidade inata</span><span>Resposta a infecções</span><span class="lvl">Ensino médio</span><span class="lvl">Graduação</span><span class="lvl">~2–4 min por partida</span></div>
+        <div class="foot"><div class="who">Luca Foggia</div><a class="play" href="fagocito.html">Jogar agora <span>→</span></a></div>
+      </div>
+    </article>
+
+    <!-- B3 -->
+    <article class="card">
+      <div class="cover">
+        <canvas id="cv-arena" width="420" height="210"></canvas>
+        <span class="pos">B3</span>
+        <div class="ttl" style="color:#FFE2C9;text-shadow:0 0 18px rgba(255,150,100,.8),0 0 40px rgba(255,150,100,.4)">Memória Imune</div>
+        <div class="tag">Resposta primária vs. secundária</div>
+      </div>
+      <div class="body">
+        <h2>Memória Imune</h2>
+        <div class="kicker">Tower defense com memória imunológica</div>
+        <p class="desc">Posicione células imunes para defender o tecido em cinco infecções. Na primeira exposição, os linfócitos demoram a chegar (expansão clonal); na reinfecção, a memória torna a resposta mais rápida, mais barata e mais potente — mas só contra o mesmo antígeno. A última fase mostra o que uma vacina faz.</p>
+        <div class="goals">
+          <div class="lbl">Ao jogar, você vai</div>
+          <ul>
+            <li>Comparar a cinética da resposta primária e da secundária: latência, magnitude e afinidade dos anticorpos</li>
+            <li>Entender a especificidade da memória imunológica — memória contra um antígeno não protege contra outro</li>
+            <li>Explicar por que a vacinação gera proteção sem a doença</li>
+          </ul>
+        </div>
+        <div class="tags"><span>Imunidade adaptativa</span><span>Vacinas e imunização</span><span>Resposta a infecções</span><span class="lvl">Graduação</span><span class="lvl">~10–15 min</span></div>
+        <div class="foot"><div class="who">Luca Foggia</div><a class="play" href="arena.html">Jogar agora <span>→</span></a></div>
+      </div>
+    </article>
+
+    <!-- B4 -->
+    <article class="card">
+      <div class="cover">
+        <canvas id="cv-cp" width="420" height="210"></canvas>
+        <span class="pos">B4</span>
+        <div class="ttl" style="color:#CFF8FF;text-shadow:0 0 18px rgba(55,240,255,.8),0 0 40px rgba(255,123,255,.4)">Checkpoint</div>
+        <div class="tag">Imunoedição do tumor</div>
+      </div>
+      <div class="body">
+        <h2>Checkpoint</h2>
+        <div class="kicker">Imunidade tumoral: o tumor evolui contra você</div>
+        <p class="desc">Num campo de imunofluorescência, o tumor cresce no centro e você o ataca de fora com T CD8, NK, CAR-T e dendríticas. Cada clone eliminado seleciona os sobreviventes: perdem MHC-I, ganham PD-L1, perdem antígeno. Combine terapias — anti-PD-1, IFN-γ, radioterapia, anti-CTLA-4 — antes do escape.</p>
+        <div class="goals">
+          <div class="lbl">Ao jogar, você vai</div>
+          <ul>
+            <li>Explicar a imunoedição (eliminação, equilíbrio, escape) como seleção clonal sob pressão imune</li>
+            <li>Entender por que T CD8 e NK são complementares (MHC-I) e o que os inibidores de checkpoint (PD-1/PD-L1, CTLA-4) fazem</li>
+            <li>Perceber por que monoterapia falha e combinações vencem — incluindo CAR-T e o escape por perda de antígeno</li>
+          </ul>
+        </div>
+        <div class="tags"><span>Imunidade adaptativa</span><span>Imunidade inata</span><span>Imunoterapia</span><span class="lvl">Graduação</span><span class="lvl">~5–10 min</span></div>
+        <div class="foot"><div class="who">Luca Foggia</div><a class="play" href="checkpoint.html">Jogar agora <span>→</span></a></div>
+      </div>
+    </article>
+
+  </div>
+
+  <section class="fit" id="encaixe">
+    <div>
+      <h3>Como se encaixam no catálogo</h3>
+      <p>Os quatro jogos cobrem ângulos que complementam os já publicados: a <strong>imunidade inata na mão</strong> (fagocitose e ativação celular), a <strong>perspectiva do patógeno</strong>, a <strong>memória imunológica</strong> como cinética — primária, secundária, especificidade e vacinação — e a <strong>imunidade tumoral</strong> como evolução sob pressão (imunoedição e checkpoints). Nenhum deles repete a mecânica de escolher o efetor certo para cada alvo.</p>
+    </div>
+    <div>
+      <div class="lbl">Pronto para publicar</div>
+      <ul>
+        <li>Um arquivo HTML autocontido por jogo, sem dependências de servidor</li>
+        <li>Funciona em desktop e celular (toque), sem cadastro</li>
+        <li>Modos de dificuldade por tempo, tela "como jogar" com legenda, curiosidades científicas</li>
+        <li>Uso livre em sala de aula; código aberto para ajustes de conteúdo</li>
+      </ul>
+    </div>
+  </section>
+
+  <footer>
+    <div>imunojoguinho · fichas no formato de catálogo, feitas para facilitar a avaliação</div>
+    <div>Luca Foggia · 2026</div>
+  </footer>
+</div>
+
+<script>
+// Placa de 96 poços: A1–A3 publicados, B1–B3 propostos
+(function(){
+  const w=document.getElementById('wells');
+  for(let r=0;r<8;r++)for(let c=0;c<12;c++){
+    const d=document.createElement('div');d.className='well';
+    if(r===0&&c<3)d.classList.add('on');
+    if(r===1&&c<4)d.classList.add('new');
+    d.title=String.fromCharCode(65+r)+(c+1);w.appendChild(d);
+  }
+})();
+
+// Capas animadas (mascotes desenhados em canvas, mesma linguagem dos jogos)
+function bgTile(x,W,H,c1,c2){
+  const g=x.createRadialGradient(W*0.5,H*0.6,10,W*0.5,H*0.6,W*0.7);g.addColorStop(0,c1);g.addColorStop(1,c2);
+  x.fillStyle=g;x.fillRect(0,0,W,H);
+  x.strokeStyle='rgba(255,255,255,0.05)';x.lineWidth=1;
+  for(let i=0;i<W;i+=44)for(let j=0;j<H;j+=44){const off=((j/44)%2)*22;x.beginPath();x.arc(i+off,j,16,0,Math.PI*2);x.stroke();}
+}
+function drawRunner(t){
+  const c=document.getElementById('cv-runner'),x=c.getContext('2d'),W=c.width,H=c.height;
+  bgTile(x,W,H,'#2A1447','#0D0515');
+  x.fillStyle='#8E3A4C';x.fillRect(0,H-46,W,46);
+  x.strokeStyle='rgba(255,180,200,0.5)';x.lineWidth=2;x.beginPath();x.moveTo(0,H-46);x.lineTo(W,H-46);x.stroke();
+  // macrófago
+  x.save();x.translate(W*0.22,H-80);x.shadowColor='rgba(170,90,230,0.9)';x.shadowBlur=22;
+  for(let i=0;i<6;i++){const a=(i/6)*Math.PI*2+t*0.6,l=26+Math.sin(t*1.5+i)*4;x.beginPath();x.ellipse(Math.cos(a)*l,Math.sin(a)*l,8,6,a,0,Math.PI*2);x.fillStyle='#7744AA';x.fill();}
+  x.beginPath();x.ellipse(0,0,30,24,0,0,Math.PI*2);x.fillStyle='#9955CC';x.fill();x.shadowBlur=0;
+  x.fillStyle='#FFF0F0';x.beginPath();x.arc(-8,-5,5,0,Math.PI*2);x.fill();x.beginPath();x.arc(8,-5,5,0,Math.PI*2);x.fill();
+  x.fillStyle='#990000';x.beginPath();x.arc(-6.5,-4,2.6,0,Math.PI*2);x.fill();x.beginPath();x.arc(9.5,-4,2.6,0,Math.PI*2);x.fill();
+  x.restore();
+  // bactéria pulando
+  const jy=Math.abs(Math.sin(t*2.2))*40;
+  x.save();x.translate(W*0.62,H-70-jy);x.shadowColor='rgba(120,255,120,0.85)';x.shadowBlur=18;
+  x.strokeStyle='#55AA55';x.lineWidth=2.5;x.beginPath();for(let i=0;i<14;i++){const f=i/13,fx=-22-f*22,fy=Math.sin(t*4+f*5)*(3+f*6);if(i===0)x.moveTo(fx,fy);else x.lineTo(fx,fy);}x.stroke();
+  x.beginPath();x.ellipse(0,0,24,16,0,0,Math.PI*2);const g=x.createRadialGradient(-5,-5,0,0,0,24);g.addColorStop(0,'#99EE99');g.addColorStop(1,'#338833');x.fillStyle=g;x.fill();x.shadowBlur=0;
+  x.fillStyle='#FFF';x.beginPath();x.arc(-6,-4,4.5,0,Math.PI*2);x.fill();x.beginPath();x.arc(6,-4,4.5,0,Math.PI*2);x.fill();
+  x.fillStyle='#111';x.beginPath();x.arc(-5,-3.5,2.2,0,Math.PI*2);x.fill();x.beginPath();x.arc(7,-3.5,2.2,0,Math.PI*2);x.fill();
+  x.restore();
+  // anticorpo
+  x.save();x.translate(W*0.86,H-62);x.shadowColor='#FFD700';x.shadowBlur=12;x.strokeStyle='#FFD700';x.lineWidth=4;x.lineCap='round';
+  x.beginPath();x.moveTo(0,14);x.lineTo(0,-2);x.stroke();x.beginPath();x.moveTo(0,-2);x.lineTo(-12,-16);x.stroke();x.beginPath();x.moveTo(0,-2);x.lineTo(12,-16);x.stroke();x.restore();
+}
+function drawFago(t){
+  const c=document.getElementById('cv-fago'),x=c.getContext('2d'),W=c.width,H=c.height;
+  bgTile(x,W,H,'#4A1436','#160818');
+  // bactérias
+  const bs=[[70,60,'#55CC55',8],[340,50,'#4499DD',7],[90,160,'#EE5544',6],[360,150,'#FFAA33',10],[210,40,'#55CC55',7]];
+  for(const [bx,by,col,r] of bs){x.save();x.shadowColor=col;x.shadowBlur=10;x.beginPath();x.arc(bx+Math.sin(t*1.5+bx)*4,by+Math.cos(t+by)*4,r,0,Math.PI*2);x.fillStyle=col;x.fill();x.restore();}
+  // macrófago grande
+  x.save();x.translate(W/2,H/2+10);x.shadowColor='rgba(204,85,255,0.9)';x.shadowBlur=28;
+  for(let i=0;i<7;i++){const a=(i/7)*Math.PI*2+t*0.5,l=40+Math.sin(t*1.3+i*1.2)*8;x.beginPath();x.ellipse(Math.cos(a)*l,Math.sin(a)*l,12,8,a,0,Math.PI*2);x.fillStyle='rgba(130,70,180,0.8)';x.fill();}
+  x.beginPath();x.arc(0,0,40,0,Math.PI*2);const g=x.createRadialGradient(-10,-10,4,0,0,40);g.addColorStop(0,'#CC99EE');g.addColorStop(0.5,'#9966BB');g.addColorStop(1,'#7744AA');x.fillStyle=g;x.fill();x.shadowBlur=0;
+  x.beginPath();x.ellipse(-4,4,14,10,0.3,0,Math.PI*2);x.fillStyle='rgba(50,20,80,0.35)';x.fill();
+  x.fillStyle='#FFEEFF';x.beginPath();x.arc(-11,-9,6,0,Math.PI*2);x.fill();x.beginPath();x.arc(11,-9,6,0,Math.PI*2);x.fill();
+  x.fillStyle='#660066';x.beginPath();x.arc(-9.5,-8,3,0,Math.PI*2);x.fill();x.beginPath();x.arc(12.5,-8,3,0,Math.PI*2);x.fill();
+  x.restore();
+}
+function drawArena(t){
+  const c=document.getElementById('cv-arena'),x=c.getContext('2d'),W=c.width,H=c.height;
+  bgTile(x,W,H,'#3A1E14','#0D0515');
+  x.fillStyle='rgba(80,220,100,0.12)';x.fillRect(0,0,70,H);
+  x.strokeStyle='rgba(80,200,100,0.5)';x.setLineDash([6,4]);x.beginPath();x.moveTo(70,0);x.lineTo(70,H);x.stroke();x.setLineDash([]);
+  const allies=[[110,60,'#4488DD',11],[140,120,'#9955CC',16],[105,170,'#DD7766',12],[175,80,'#DDCC33',11]];
+  for(const [ax,ay,col,r] of allies){x.save();x.shadowColor=col;x.shadowBlur=14;x.beginPath();x.arc(ax,ay+Math.sin(t+ax)*3,r,0,Math.PI*2);const g=x.createRadialGradient(ax-3,ay-3,1,ax,ay,r);g.addColorStop(0,'#FFF');g.addColorStop(1,col);x.fillStyle=g;x.fill();x.restore();}
+  // anticorpos voando
+  x.save();x.globalCompositeOperation='lighter';x.shadowColor='#FFEE66';x.shadowBlur=10;x.fillStyle='#FFEE66';
+  for(let i=0;i<4;i++){const px=190+((t*90+i*60)%200),py=80+i*12+Math.sin(t*3+i)*4;x.beginPath();x.arc(px,py,3,0,Math.PI*2);x.fill();}
+  x.restore();
+  // inimigos
+  for(let i=0;i<5;i++){const ex=300+(i%3)*38+Math.sin(t*0.8+i)*4,ey=50+i*32;x.save();x.shadowColor='#55CC55';x.shadowBlur=10;x.beginPath();x.arc(ex,ey,8,0,Math.PI*2);const g=x.createRadialGradient(ex-2,ey-2,1,ex,ey,8);g.addColorStop(0,'#AAFFAA');g.addColorStop(1,'#338833');x.fillStyle=g;x.fill();x.restore();}
+  // "memória" — selo
+  x.save();x.font='700 12px Fredoka, sans-serif';x.textAlign='center';x.fillStyle='rgba(255,255,255,0.75)';x.shadowColor='rgba(255,150,100,0.8)';x.shadowBlur=10;x.fillText('MEMÓRIA ✓',W-60,H-30);x.restore();
+}
+function drawCP(t){
+  const c=document.getElementById('cv-cp'),x=c.getContext('2d'),W=c.width,H=c.height;
+  x.fillStyle='#02040A';x.fillRect(0,0,W,H);
+  x.strokeStyle='rgba(55,240,255,0.06)';x.lineWidth=1;for(let i=0;i<W;i+=22){x.beginPath();x.moveTo(i,0);x.lineTo(i,H);x.stroke();}for(let j=0;j<H;j+=22){x.beginPath();x.moveTo(0,j);x.lineTo(W,j);x.stroke();}
+  x.strokeStyle='rgba(55,240,255,0.25)';x.lineWidth=2;x.beginPath();x.arc(W/2,H/2+10,95,0,Math.PI*2);x.stroke();
+  for(let i=0;i<12;i++){const a=i*0.75+t*0.15,d=i?10+(i%4)*8:0;const px=W/2+Math.cos(a)*d,py=H/2+10+Math.sin(a)*d;
+    if(i%3===0){x.save();x.globalCompositeOperation='lighter';x.fillStyle='rgba(255,90,255,0.3)';x.beginPath();x.arc(px,py,14,0,Math.PI*2);x.fill();x.restore();}
+    x.save();x.shadowColor='rgba(70,110,255,0.9)';x.shadowBlur=10;x.fillStyle='#3557E8';x.beginPath();x.arc(px,py,7,0,Math.PI*2);x.fill();x.restore();
+    if(i%2===0){x.strokeStyle='#37F0FF';x.lineWidth=1.5;x.beginPath();x.arc(px,py,9,0,Math.PI*2);x.stroke();}
+    x.fillStyle='#FFE156';x.beginPath();x.arc(px+5,py-5,1.5,0,Math.PI*2);x.fill();}
+  for(let i=0;i<5;i++){const a=t*0.6+i*1.25;const px=W/2+Math.cos(a)*70,py=H/2+10+Math.sin(a)*55;const col=i%2?'#FFE156':'#5CFF7A';x.save();x.shadowColor=col;x.shadowBlur=14;x.fillStyle=col;x.beginPath();x.arc(px,py,5,0,Math.PI*2);x.fill();x.restore();}
+}
+(function loop(){const t=Date.now()*0.001;drawRunner(t);drawFago(t);drawArena(t);drawCP(t);requestAnimationFrame(loop);})();
+</script>
+</body>
+</html>
