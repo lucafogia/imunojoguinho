@@ -716,10 +716,10 @@ function drawObs(o) {
 
   // Label (pílula)
   ctx.shadowBlur=0;
-  ctx.font='600 9px '+FONT; ctx.textAlign='center';
-  const lw=ctx.measureText(c.label).width+12;
-  ctx.fillStyle='rgba(20,8,30,0.6)';ctx.beginPath();ctx.roundRect(-lw/2,-o.h/2-17,lw,14,7);ctx.fill();
-  ctx.fillStyle='#FFF'; ctx.fillText(c.label,0,-o.h/2-6);
+  ctx.font='600 12px '+FONT; ctx.textAlign='center';
+  const lw=ctx.measureText(c.label).width+16;
+  ctx.fillStyle='rgba(20,8,30,0.66)';ctx.beginPath();ctx.roundRect(-lw/2,-o.h/2-23,lw,19,8);ctx.fill();
+  ctx.fillStyle='#FFF'; ctx.fillText(c.label,0,-o.h/2-9);
 
   // Seta-guia (didática): chevron verde = PULE (acima) / amarelo = ABAIXE (no vão)
   if(o.x > player.x-20 && o.x < GW*0.85){

@@ -105,6 +105,7 @@ function sndPower(){chord([523,659,784,1047],0.2,{vol:0.05});}
 function sndRepair(){chord([523,659],0.1,{vol:0.035});}
 function sndWin(){chord([523,659,784,1047,1319],0.35,{vol:0.05},0.09);}
 function sndKillHazard(){chord([880,1175,1568],0.1,{vol:0.045},0.05);}
+function sndDivide(){tone(190,0.07,{type:'triangle',vol:0.018});}
 function vignette(w,h,strength=0.5){const g=ctx.createRadialGradient(w/2,h/2,Math.min(w,h)*0.42,w/2,h/2,Math.max(w,h)*0.72);g.addColorStop(0,'rgba(0,0,0,0)');g.addColorStop(1,'rgba(0,0,0,'+strength+')');ctx.fillStyle=g;ctx.fillRect(0,0,w,h);}
 const MUTE_BTN={x:GW-40,y:56,w:28,h:24};
 function drawMuteBtn(){const b=MUTE_BTN;ctx.save();ctx.fillStyle='rgba(0,0,0,0.35)';ctx.beginPath();ctx.roundRect(b.x,b.y,b.w,b.h,7);ctx.fill();ctx.font='14px '+FONT;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillStyle='rgba(255,255,255,0.85)';ctx.fillText(muted?'🔇':'🔊',b.x+b.w/2,b.y+b.h/2+1);ctx.restore();}
@@ -116,51 +117,58 @@ const CAPS=Array.from({length:10},(_,i)=>({x:(i*331+120)%WORLD_W,y:(i*577+80)%WO
 const CHAR_CONFIG={
   M1:{
     name:'Macrófago M1', desc:'Modo Fagocitose',
-    detail:'Come bactérias, cresce ao comer, fica mais lento.',
+    detail:'Contenha a infecção: fagocite as bactérias antes que se multipliquem. Cresce ao comer.',
     color:'#9955CC', dark:'#7744AA', light:'#CC99EE',
     bodyColors:['#CC99EE','#9966BB','#7744AA'],
     pseudoCol:'rgba(130,70,180,0.7)',
     eyeCol:'#660066', nucleusCol:'rgba(50,20,80,0.35)',
-    speed:2.6, radius:26, hpMax:90, hpDrain:0.032,
+    speed:3.0, radius:26,
     cytokine:'TNF-α', cytokineDesc:'Speed boost + raio maior',
-    deathMsg:'APOPTOSE!', deathDesc:'O macrófago não conseguiu manter sua energia e entrou em apoptose.',
+    deathMsg:'TECIDO TOMADO!', deathDesc:'As bactérias se multiplicaram mais rápido do que o macrófago conseguia fagocitar.',
     scoreLabel:'fagocitados', grows:true,
     uiAccent:'#CC88FF', uiDark:'rgba(100,50,150,0.5)',
   },
   NEUTRO:{
     name:'Neutrófilo', desc:'Modo Ataque Rápido',
-    detail:'Mais rápido, menor, vida drena rápido. Curta duração!',
+    detail:'Rápido e agressivo: o primeiro a chegar. Alcance menor, burst de IL-8 devastador.',
     color:'#4488DD', dark:'#2266AA', light:'#88BBFF',
     bodyColors:['#88BBFF','#5599DD','#3377BB'],
     pseudoCol:'rgba(60,100,200,0.7)',
     eyeCol:'#003366', nucleusCol:'rgba(20,40,80,0.35)',
-    speed:3.2, radius:22, hpMax:85, hpDrain:0.045,
+    speed:3.2, radius:22,
     cytokine:'IL-8', cytokineDesc:'Burst respiratório AoE',
-    deathMsg:'NETOSE!', deathDesc:'O neutrófilo liberou NETs e formou pus.',
+    deathMsg:'TECIDO TOMADO!', deathDesc:'O neutrófilo liberou NETs e formou pus, mas as bactérias tomaram o tecido.',
     scoreLabel:'fagocitados', grows:false,
     uiAccent:'#66AAFF', uiDark:'rgba(50,80,150,0.5)',
   },
   M2:{
     name:'Macrófago M2', desc:'Modo Reparo Tecidual',
-    detail:'Repara tecidos danificados. Mais lento, mais resistente.',
+    detail:'Repara o tecido: remova detritos, necrose e fibrose antes que a degradação tome conta.',
     color:'#44AA88', dark:'#228866', light:'#88DDBB',
     bodyColors:['#88DDBB','#55BB99','#339977'],
     pseudoCol:'rgba(60,170,130,0.7)',
     eyeCol:'#004433', nucleusCol:'rgba(20,60,50,0.35)',
-    speed:2.2, radius:26, hpMax:110, hpDrain:0.028,
-    cytokine:'IL-10', cytokineDesc:'Aura de cura + regeneração',
-    deathMsg:'APOPTOSE!', deathDesc:'Reparo incompleto - O macrófago M2 não conseguiu reparar o tecido a tempo.',
+    speed:2.7, radius:26,
+    cytokine:'IL-10', cytokineDesc:'Reparo 2x mais rápido e a degradação para por 10s',
+    deathMsg:'TECIDO COLAPSOU!', deathDesc:'A degradação avançou mais rápido do que o reparo.',
     scoreLabel:'reparados', grows:false,
     uiAccent:'#66DDAA', uiDark:'rgba(50,150,100,0.5)',
   }
 };
 
 // --- Modos de dificuldade (meta = sobreviver ao tempo) ---
+// divide = intervalo (s) entre divisões de cada bactéria; arrive = frames entre novas chegadas; maxLoad = carga que perde
 const MODES={
-  FACIL:  {key:'FACIL',  label:'Fácil',  secs:60,  drainMul:0.80, hazardEvery:600, hazardMax:1, col:'#66DD88'},
-  MEDIO:  {key:'MEDIO',  label:'Médio',  secs:90,  drainMul:1.00, hazardEvery:420, hazardMax:2, col:'#FFC24D'},
-  DIFICIL:{key:'DIFICIL',label:'Difícil',secs:120, drainMul:1.25, hazardEvery:300, hazardMax:3, col:'#FF6B6B'},
+  FACIL:  {key:'FACIL',  label:'Fácil',  secs:60,  divide:[16,26], arrive:330, maxLoad:34, hazardEvery:600, hazardMax:1, col:'#66DD88'},
+  MEDIO:  {key:'MEDIO',  label:'Médio',  secs:90,  divide:[12,19], arrive:260, maxLoad:38, hazardEvery:420, hazardMax:2, col:'#FFC24D'},
+  DIFICIL:{key:'DIFICIL',label:'Difícil',secs:120, divide:[9,14],  arrive:200, maxLoad:42, hazardEvery:300, hazardMax:3, col:'#FF6B6B'},
 };
+function rnd(r){return r[0]+Math.random()*(r[1]-r[0]);}
+// carga atual de infecção (M1/neutrófilo) ou degradação (M2)
+function currentLoad(){
+  if(charType==='M2') return targets.reduce((a,t)=>a+(t.repairing?0:t.cfg.load),0);
+  return bacteria.reduce((a,b)=>a+(b.eating?0:b.cfg.load),0);
+}
 const modeKeys=['FACIL','MEDIO','DIFICIL'];
 
 // State
@@ -192,28 +200,28 @@ let alerts=[];
 
 // Bacteria types
 const TYPES={
-  COCCUS:    {name:'Coccus (Staphylococcus)',  short:'Coccus',   col:'#55CC55',dk:'#338833',r:8, spd:0.7, flee:60,  fforce:0.3,pts:1, hp:5,  shape:'circle'},
-  BACILLUS:  {name:'Bacilo (Escherichia coli)', short:'Bacilo',   col:'#4499DD',dk:'#336699',r:6, spd:1.2, flee:120, fforce:0.6,pts:2, hp:8,  shape:'rod'},
-  SPIRILLUM: {name:'Espiroqueta (Treponema)',   short:'Espiroqueta',col:'#EE5544',dk:'#AA3322',r:5, spd:2.2, flee:180, fforce:0.9,pts:4, hp:3,  shape:'spiral'},
-  CAPSULADO: {name:'Pneumococo (encapsulado)',  short:'Capsulado',col:'#FFAA33',dk:'#BB7711',r:10,spd:0.5, flee:40,  fforce:0.2,pts:6, hp:18, shape:'capsule', hits:3},
+  COCCUS:    {name:'Coccus (Staphylococcus)',  short:'Coccus',   col:'#55CC55',dk:'#338833',r:8, spd:0.7, flee:60,  fforce:0.3,pts:1, hp:5,  load:1,   shape:'circle'},
+  BACILLUS:  {name:'Bacilo (Escherichia coli)', short:'Bacilo',   col:'#4499DD',dk:'#336699',r:6, spd:1.2, flee:120, fforce:0.6,pts:2, hp:8,  load:1.5, shape:'rod'},
+  SPIRILLUM: {name:'Espiroqueta (Treponema)',   short:'Espiroqueta',col:'#EE5544',dk:'#AA3322',r:5, spd:2.2, flee:180, fforce:0.9,pts:4, hp:3,  load:1.5, shape:'spiral'},
+  CAPSULADO: {name:'Pneumococo (encapsulado)',  short:'Capsulado',col:'#FFAA33',dk:'#BB7711',r:10,spd:0.5, flee:40,  fforce:0.2,pts:6, hp:18, load:2.5, shape:'capsule', hits:3},
 };
 
 // M2 target types
 const TARGET_TYPES={
-  DETRITO:   {name:'Detrito Celular',   short:'Detrito',  col:'#888888',dk:'#555555',r:10,spd:0,   pts:1,hits:1,shape:'debris'},
-  NECROSE:   {name:'Tecido Necrótico',  short:'Necrose',  col:'#884433',dk:'#552211',r:14,spd:0,   pts:3,hits:2,shape:'necrotic'},
-  APOPTOSE:  {name:'Célula Apoptótica', short:'Apoptótica',col:'#DD8833',dk:'#AA6611',r:11,spd:0.3,pts:2,hits:1,shape:'apoptotic'},
-  FIBROSE:   {name:'Fibrose',           short:'Fibrose',  col:'#CCAA44',dk:'#997722',r:16,spd:0,   pts:5,hits:3,shape:'fibrosis'},
+  DETRITO:   {name:'Detrito Celular',   short:'Detrito',  col:'#888888',dk:'#555555',r:10,spd:0,   pts:1,hits:1,load:1,  shape:'debris'},
+  NECROSE:   {name:'Tecido Necrótico',  short:'Necrose',  col:'#884433',dk:'#552211',r:14,spd:0,   pts:3,hits:2,load:2,  shape:'necrotic'},
+  APOPTOSE:  {name:'Célula Apoptótica', short:'Apoptótica',col:'#DD8833',dk:'#AA6611',r:11,spd:0.3,pts:2,hits:1,load:1.5,shape:'apoptotic'},
+  FIBROSE:   {name:'Fibrose',           short:'Fibrose',  col:'#CCAA44',dk:'#997722',r:16,spd:0,   pts:5,hits:3,load:3,  shape:'fibrosis'},
 };
 
 // Milestone intro messages
 const introMsgs={
-  BACILLUS: 'NOVO: Bacilos! Bactérias que fogem de você.',
+  BACILLUS: 'NOVO: Bacilos! Fogem de você e pesam mais na infecção.',
   SPIRILLUM:'NOVO: Espiroquetas! Rápidas e evasivas.',
   CAPSULADO:'NOVO: Pneumococos! Cápsula protege da fagocitose. Precisa 2 contatos!',
 };
 const introMsgsM2={
-  NECROSE:  'NOVO: Tecido Necrótico! Precisa 2 toques para reparar.',
+  NECROSE:  'NOVO: Tecido Necrótico! Precisa 2 toques — e se espalha se você demorar.',
   APOPTOSE: 'NOVO: Células Apoptóticas! Elas se movem devagar.',
   FIBROSE:  'NOVO: Fibrose! Grande, precisa 3 toques e vale 5 pontos!',
 };
@@ -268,7 +276,7 @@ function init(){
   targetFrames=MODES[mode].secs*60;
   const cfg=CHAR_CONFIG[charType];
   P={x:WORLD_W/2,y:WORLD_H/2,r:cfg.radius,baseR:cfg.radius,spd:cfg.speed,
-     hp:cfg.hpMax,maxHp:cfg.hpMax,
+     hp:100,maxHp:100,stun:0,
      eaten:0,pseudo:0,moveAngle:0,moving:false,
      power:0,powerName:'',
      knockX:0,knockY:0,damageFlash:0,
@@ -301,6 +309,7 @@ function spawnBact(type){
     vy:(Math.random()-0.5)*t.spd,
     r:t.r, hp:1,
     capsule: type==='CAPSULADO'?2:0,
+    divT: rnd(MODES[mode].divide)*60,
     wobble:Math.random()*Math.PI*2,
     eating:false, eatTimer:0,
     flash:0,
@@ -320,6 +329,7 @@ function spawnTarget(type){
     vx: t.spd>0?(Math.random()-0.5)*t.spd:0,
     vy: t.spd>0?(Math.random()-0.5)*t.spd:0,
     r:t.r, hp:1,
+    divT: rnd(MODES[mode].divide)*60*1.4,
     hitsLeft:t.hits,
     wobble:Math.random()*Math.PI*2,
     repairing:false, repairTimer:0,
@@ -353,6 +363,27 @@ function spawnHazard(type){
 }
 
 function dist(x1,y1,x2,y2){return Math.sqrt((x2-x1)**2+(y2-y1)**2);}
+function divideBact(b){ // fissão binária: nasce uma irmã ao lado
+  const a=Math.random()*Math.PI*2;
+  const n={x:b.x+Math.cos(a)*b.r*2.2,y:b.y+Math.sin(a)*b.r*2.2,type:b.type,cfg:b.cfg,
+    vx:Math.cos(a)*b.cfg.spd,vy:Math.sin(a)*b.cfg.spd,r:b.cfg.r,hp:1,capsule:b.type==='CAPSULADO'?2:0,
+    divT:rnd(MODES[mode].divide)*60,wobble:Math.random()*Math.PI*2,eating:false,eatTimer:0,flash:0};
+  n.x=Math.max(n.r,Math.min(WORLD_W-n.r,n.x));n.y=Math.max(n.r,Math.min(WORLD_H-n.r,n.y));
+  bacteria.push(n);addP(b.x,b.y,b.cfg.col,6,2);addText(b.x,b.y-b.r-8,'×2','#FF8888',11);sndDivide();
+}
+function spreadTarget(t){ // necrose se espalha para o tecido vizinho
+  const a=Math.random()*Math.PI*2;
+  const n={x:t.x+Math.cos(a)*t.r*2.4,y:t.y+Math.sin(a)*t.r*2.4,type:'NECROSE',cfg:TARGET_TYPES.NECROSE,vx:0,vy:0,r:TARGET_TYPES.NECROSE.r,hp:1,
+    divT:rnd(MODES[mode].divide)*60*1.4,hitsLeft:2,wobble:Math.random()*Math.PI*2,repairing:false,repairTimer:0,flash:0,angle:Math.random()*Math.PI*2};
+  n.x=Math.max(n.r,Math.min(WORLD_W-n.r,n.x));n.y=Math.max(n.r,Math.min(WORLD_H-n.r,n.y));
+  targets.push(n);addP(t.x,t.y,'#884433',6,2);addText(t.x,t.y-t.r-8,'espalhou','#FF8888',10);sndDivide();
+}
+function surge(){ // protozoário derruba a defesa: a infecção/degradação dá um salto perto de você
+  if(charType==='M2'){for(let i=0;i<2;i++){const a=Math.random()*Math.PI*2;spreadTarget({x:P.x+Math.cos(a)*60,y:P.y+Math.sin(a)*60,r:14});}return;}
+  const e=P.eaten;const pool=e>=30?['COCCUS','BACILLUS','SPIRILLUM','CAPSULADO']:e>=15?['COCCUS','BACILLUS','SPIRILLUM']:e>=5?['COCCUS','BACILLUS']:['COCCUS'];
+  for(let i=0;i<3;i++){const type=pool[Math.floor(Math.random()*pool.length)];const a=Math.random()*Math.PI*2;
+    divideBact({x:P.x+Math.cos(a)*70,y:P.y+Math.sin(a)*70,type,cfg:TYPES[type],r:TYPES[type].r});}
+}
 
 function addP(x,y,col,n=6,sp=4){
   for(let i=0;i<n;i++) particles.push({x,y,vx:(Math.random()-0.5)*sp,vy:(Math.random()-0.5)*sp,
@@ -411,8 +442,9 @@ function update(){
   // Knockback decay
   P.knockX*=0.85; P.knockY*=0.85;
 
-  // Player movement
-  if(touching||(!('ontouchstart' in window))){
+  // Player movement (parado enquanto atordoado por protozoário)
+  if(P.stun>0)P.stun--;
+  if(P.stun<=0&&(touching||(!('ontouchstart' in window)))){
     const dx=targetX-P.x, dy=targetY-P.y;
     const d=Math.sqrt(dx*dx+dy*dy);
     let spd=P.spd;
@@ -442,7 +474,7 @@ function update(){
   // Growth (only M1)
   if(cfg.grows){
     P.r=cfg.radius+Math.min(14,P.eaten*0.25);
-    P.spd=Math.max(2.0, cfg.speed-P.eaten*0.008); // piso: nunca vira alvo parado
+    P.spd=Math.max(2.4, cfg.speed-P.eaten*0.006); // cresce e desacelera um pouco, mas nunca vira alvo parado
   } else {
     P.r=cfg.radius;
     P.spd=cfg.speed;
@@ -452,14 +484,7 @@ function update(){
   // Power radius boost for M2
   if(charType==='M2' && P.power>0) P.r*=1.5;
 
-  // Health drain
-  let drain=(cfg.hpDrain+P.eaten*0.0003)*MODES[mode].drainMul;
-  // M2 IL-10 regen
-  if(charType==='M2' && P.power>0){
-    P.hp=Math.min(P.maxHp,P.hp+0.5);
-    drain=0;
-  }
-  P.hp-=drain;
+  // (sem drenagem de energia: a pressão vem da carga de infecção/degradação, que sobe sozinha)
 
   // Power countdown
   if(P.power>0){
@@ -473,7 +498,6 @@ function update(){
         if(d2<aoR){
           b.hp=0;
           P.eaten++;
-          P.hp=Math.min(P.maxHp,P.hp+b.cfg.hp*0.5);
           addP(b.x,b.y,b.cfg.col,8,4);
           addText(b.x,b.y-10,'+'+b.cfg.pts,'#66AAFF',12);
           sndEat();
@@ -494,8 +518,8 @@ function update(){
     }
   }
 
-  if(P.hp<=0){
-    P.hp=0; state='gameover'; gameOverTime=Date.now();
+  if(currentLoad()>=MODES[mode].maxLoad){
+    state='gameover'; gameOverTime=Date.now();
     if(P.eaten>highScore){highScore=P.eaten;localStorage.setItem('fagocito_hs',highScore+'');}
     sndDie(); return;
   }
@@ -541,9 +565,8 @@ function update(){
 }
 
 function updateBacteria(){
-  const e=P.eaten;
-  const maxBact=Math.min(25,6+Math.floor(e*0.4));
-  if(bacteria.filter(b=>!b.eating).length<maxBact && frame%50===0){
+  const e=P.eaten;const M=MODES[mode];
+  if(frame%M.arrive===0 && currentLoad()<M.maxLoad-1){ // novas bactérias chegam ao tecido
     let type='COCCUS';
     if(e>=30) type=['COCCUS','BACILLUS','SPIRILLUM','CAPSULADO'][Math.floor(Math.random()*4)];
     else if(e>=15) type=['COCCUS','BACILLUS','SPIRILLUM'][Math.floor(Math.random()*3)];
@@ -559,7 +582,7 @@ function updateBacteria(){
       b.r=b.cfg.r*(1-b.eatTimer/30*0.8);
       if(b.eatTimer>=30){
         b.hp=0;
-        P.eaten++; P.hp=Math.min(P.maxHp,P.hp+b.cfg.hp);
+        P.eaten++;
         addP(P.x,P.y,b.cfg.col,10,3);
         addText(b.x,b.y-15,'+'+b.cfg.pts,b.cfg.col,14);
         phagosomes.push({ox:(Math.random()-0.5)*P.r*0.5,oy:(Math.random()-0.5)*P.r*0.5,
@@ -573,6 +596,7 @@ function updateBacteria(){
     }
 
     b.wobble+=0.08;
+    b.divT--;if(b.divT<=0){b.divT=rnd(M.divide)*60;if(currentLoad()+b.cfg.load<=M.maxLoad)divideBact(b);}
     const d2=dist(b.x,b.y,P.x,P.y);
     if(b.cfg.flee>0 && d2<b.cfg.flee){
       const ax=(b.x-P.x)/d2*b.cfg.fforce;
@@ -610,9 +634,8 @@ function updateBacteria(){
 }
 
 function updateM2Targets(){
-  const e=P.eaten;
-  const maxT=Math.min(30,8+Math.floor(e*0.4));
-  if(targets.filter(t=>!t.repairing).length<maxT && frame%50===0){
+  const e=P.eaten;const M=MODES[mode];
+  if(P.power<=0 && frame%M.arrive===0 && currentLoad()<M.maxLoad-1){ // o tecido segue se degradando (IL-10 pausa)
     let type='DETRITO';
     if(e>=25) type=['DETRITO','NECROSE','APOPTOSE','FIBROSE'][Math.floor(Math.random()*4)];
     else if(e>=12) type=['DETRITO','NECROSE','APOPTOSE'][Math.floor(Math.random()*3)];
@@ -623,13 +646,13 @@ function updateM2Targets(){
 
   for(const t of targets){
     if(t.repairing){
-      t.repairTimer++;
-      t.r=t.cfg.r*(1-t.repairTimer/40*0.8);
+      t.repairTimer+=(P.power>0?2:1); // IL-10: reparo 2x
+      t.r=t.cfg.r*(1-Math.min(1,t.repairTimer/40)*0.8);
       // Green healing particles
       if(t.repairTimer%5===0) addP(t.x,t.y,'#66FF88',4,2);
       if(t.repairTimer>=40){
         t.hp=0;
-        P.eaten++; P.hp=Math.min(P.maxHp,P.hp+3);
+        P.eaten++;
         addP(t.x,t.y,'#66FF88',12,4);
         addText(t.x,t.y-15,'+'+t.cfg.pts,'#66FFAA',14);
         sndRepair();
@@ -641,6 +664,7 @@ function updateM2Targets(){
     }
 
     t.wobble+=0.04;
+    if(t.type==='NECROSE'&&P.power<=0){t.divT--;if(t.divT<=0){t.divT=rnd(M.divide)*60*1.4;if(currentLoad()+t.cfg.load<=M.maxLoad)spreadTarget(t);}}
     // Move (only apoptotic)
     if(t.cfg.spd>0){
       t.x+=t.vx; t.y+=t.vy;
@@ -714,14 +738,14 @@ function updateHazards(){
         hazards.splice(i,1);
         continue;
       }
-      P.hp-=h.dmg;
       P.damageFlash=15;
-      shakeTime=12;
-      const kf=8;
+      shakeTime=12;P.stun=55;
+      const kf=9;
       P.knockX=-(dx/d)*kf;
       P.knockY=-(dy/d)*kf;
+      surge();
       addP(P.x,P.y,'#FF4444',15,6);
-      addText(P.x,P.y-P.r-10,'INFECTADO! -'+h.dmg,'#FF4444',15);
+      addText(P.x,P.y-P.r-10,'INFECTADO! a '+(charType==='M2'?'degradação':'infecção')+' avança','#FF4444',14);
       sndHazardHit();
       hazards.splice(i,1);
       continue;
@@ -816,9 +840,10 @@ function drawBact(b){
     ctx.beginPath();ctx.arc(0,0,b.r*0.35,0,Math.PI*2);ctx.fillStyle='rgba(0,0,0,0.1)';ctx.fill();
   }
   ctx.shadowBlur=0;
-  ctx.font='bold 7px Fredoka,Arial,sans-serif';ctx.textAlign='center';ctx.textBaseline='bottom';
-  ctx.fillStyle='rgba(0,0,0,0.4)';ctx.fillText(c.short,0,-b.r-3);
-  ctx.fillStyle='rgba(255,255,255,0.8)';ctx.fillText(c.short,0,-b.r-4);
+  ctx.font='600 11px '+FONT;ctx.textAlign='center';ctx.textBaseline='middle';
+  const lw=ctx.measureText(c.short).width+12;
+  ctx.fillStyle='rgba(20,8,30,0.62)';ctx.beginPath();ctx.roundRect(-lw/2,-b.r-20,lw,15,7);ctx.fill();
+  ctx.fillStyle='#FFF';ctx.fillText(c.short,0,-b.r-12);ctx.textBaseline='alphabetic';
   ctx.restore();
 }
 
@@ -902,9 +927,10 @@ function drawTarget(t){
       ctx.fillText('x'+t.hitsLeft,0,3);
     }
   }
-  ctx.font='bold 7px Fredoka,Arial,sans-serif';ctx.textAlign='center';ctx.textBaseline='bottom';
-  ctx.fillStyle='rgba(0,0,0,0.4)';ctx.fillText(c.short,0,-t.r-3);
-  ctx.fillStyle='rgba(255,255,255,0.8)';ctx.fillText(c.short,0,-t.r-4);
+  ctx.font='600 11px '+FONT;ctx.textAlign='center';ctx.textBaseline='middle';
+  const lw=ctx.measureText(c.short).width+12;
+  ctx.fillStyle='rgba(20,8,30,0.62)';ctx.beginPath();ctx.roundRect(-lw/2,-t.r-20,lw,15,7);ctx.fill();
+  ctx.fillStyle='#FFF';ctx.fillText(c.short,0,-t.r-12);ctx.textBaseline='alphabetic';
   ctx.restore();
 }
 
@@ -1092,12 +1118,10 @@ function drawPlayer(){
     ctx.beginPath();ctx.arc(px2,py2,2.2,0,Math.PI*2);ctx.fillStyle=cfg.eyeCol;ctx.fill();
   });
 
-  // Health halo
-  if(P.hp<50){
-    const ha=(1-P.hp/50)*0.3;
-    ctx.beginPath();ctx.arc(0,0,P.r+3,0,Math.PI*2);
-    ctx.strokeStyle=`rgba(255,50,50,${ha*(0.5+Math.sin(frame*0.15)*0.5)})`;
-    ctx.lineWidth=2;ctx.stroke();
+  // Atordoado (protozoário)
+  if(P.stun>0){
+    ctx.beginPath();ctx.arc(0,0,P.r+4,0,Math.PI*2);ctx.strokeStyle='rgba(255,80,80,0.7)';ctx.lineWidth=2;ctx.setLineDash([4,4]);ctx.stroke();ctx.setLineDash([]);
+    ctx.font='700 11px '+FONT;ctx.textAlign='center';ctx.fillStyle='#FFF';ctx.fillText('zz',P.r*0.6,-P.r*0.6);
   }
 
   ctx.restore();
@@ -1129,9 +1153,9 @@ function drawTexts(){
 function drawUI(){
   const cfg=CHAR_CONFIG[charType];
 
-  // HP bar
+  // Barra de INFECÇÃO / DEGRADAÇÃO (enche = perde)
   const bw=180,bh=14,bx=15,by=15;
-  const pct=P.hp/P.maxHp;
+  const loadNow=currentLoad(), pct=Math.min(1,loadNow/MODES[mode].maxLoad);
   ctx.fillStyle='rgba(0,0,0,0.35)';
   ctx.beginPath();ctx.roundRect(bx,by,bw,bh,bh/2);ctx.fill();
   ctx.save();
@@ -1142,8 +1166,8 @@ function drawUI(){
     if(charType==='M1'){hg.addColorStop(0,'#FFD700');hg.addColorStop(1,'#FF8800');}
     else if(charType==='NEUTRO'){hg.addColorStop(0,'#66BBFF');hg.addColorStop(1,'#3388DD');}
     else{hg.addColorStop(0,'#66FFAA');hg.addColorStop(1,'#33CC77');}
-  } else if(pct>0.5){hg.addColorStop(0,'#55DD77');hg.addColorStop(1,'#33AA55');}
-  else if(pct>0.25){hg.addColorStop(0,'#DDDD44');hg.addColorStop(1,'#AAAA33');}
+  } else if(pct<0.5){hg.addColorStop(0,'#55DD77');hg.addColorStop(1,'#33AA55');}
+  else if(pct<0.75){hg.addColorStop(0,'#DDDD44');hg.addColorStop(1,'#AAAA33');}
   else{hg.addColorStop(0,'#DD4444');hg.addColorStop(1,'#AA2222');}
   ctx.fillStyle=hg;ctx.fillRect(bx,by,bw*pct,bh);
   ctx.restore();
@@ -1152,7 +1176,7 @@ function drawUI(){
 
   ctx.font='bold 10px Fredoka,Arial,sans-serif';ctx.textAlign='left';
   ctx.fillStyle='rgba(255,255,255,0.7)';
-  ctx.fillText('ENERGIA',bx,by+bh+12);
+  ctx.fillText((charType==='M2'?'DEGRADAÇÃO DO TECIDO':'INFECÇÃO DO TECIDO')+'  '+Math.round(pct*100)+'%',bx,by+bh+12);
 
   // Power bar (below HP)
   if(P.power>0){
@@ -1277,9 +1301,9 @@ function drawUI(){
     ctx.globalAlpha=1;
   }
 
-  // HP warning flash
-  if(P.hp<25){
-    const wa=((1-P.hp/25)*0.15)*(0.5+Math.sin(frame*0.12)*0.5);
+  // Alerta: carga perto do máximo
+  if(pct>0.75){
+    const wa=((pct-0.75)/0.25*0.15)*(0.5+Math.sin(frame*0.12)*0.5);
     ctx.fillStyle=`rgba(200,0,0,${wa})`;ctx.fillRect(0,0,GW,GH);
   }
 
@@ -1330,7 +1354,7 @@ function drawMenu(){
 
   ctx.font='12px Fredoka,Arial,sans-serif';ctx.fillStyle='#DDBBFF';
   ctx.fillText('Escolha seu personagem e proteja o tecido!',GW/2,GH*0.6);
-  ctx.fillText('Coma para manter sua energia. Cuidado com os protozoarios!',GW/2,GH*0.6+18);
+  ctx.fillText('Contenha a infecção — ou repare o tecido. Cuidado com os protozoários!',GW/2,GH*0.6+18);
 
   ctx.font='bold 13px Fredoka,Arial,sans-serif';ctx.fillStyle='#FFDD88';
   const mob='ontouchstart' in window;
@@ -1464,7 +1488,6 @@ function drawSelect(){
     const stats=[
       ['Velocidade',cfg.speed,3.5],
       ['Raio',cfg.radius,30],
-      ['HP Max',cfg.hpMax,140],
     ];
     stats.forEach(([label,val,max],si)=>{
       const sy2=statY+si*18;
@@ -1565,15 +1588,15 @@ function drawGameOver(){
 }
 
 const LEGENDS={
-  M1:['COMA bactérias para manter a ENERGIA — ela drena o tempo todo.',
-      'PROTOZOÁRIOS (aura vermelha) infectam você. Fuja — ou ative o TNF-α e destrua-os!',
+  M1:['A barra INFECÇÃO sobe conforme as bactérias se multiplicam (elas se dividem!). Fagocite para baixá-la — se encher, o tecido é tomado.',
+      'PROTOZOÁRIOS (aura vermelha) infectam você: atordoam e a infecção dá um salto. Fuja — ou ative o TNF-α e destrua-os!',
       'A cada 10 fagocitadas você libera a citocina TNF-α: mais veloz, maior alcance.'],
-  NEUTRO:['Rápido e frágil: a energia drena depressa. Coma sem parar!',
-      'PROTOZOÁRIOS infectam você. Fuja — ou use o burst de IL-8 para eliminá-los.',
+  NEUTRO:['A barra INFECÇÃO sobe conforme as bactérias se multiplicam. Você é rápido: coma sem parar para segurá-la.',
+      'PROTOZOÁRIOS infectam você: atordoam e a infecção dá um salto. Fuja — ou use o burst de IL-8 para eliminá-los.',
       'A cada 10 fagocitadas: burst respiratório (IL-8) — destrói tudo ao redor.'],
-  M2:['REPARE detritos, necrose e fibrose para manter a ENERGIA.',
+  M2:['A barra DEGRADAÇÃO sobe conforme detritos, necrose e fibrose se acumulam (a necrose se espalha!). Repare para baixá-la — se encher, o tecido colapsa.',
       'PROTOZOÁRIOS infectam você e o M2 NÃO consegue matá-los (é permissivo). Só fugir!',
-      'A cada 10 reparos: IL-10 — cura e regenera por 10 segundos.'],
+      'A cada 10 reparos: IL-10 — reparo 2x mais rápido e a degradação para por 10 segundos.'],
 };
 
 function drawModeSelect(){
@@ -1600,7 +1623,7 @@ function drawModeSelect(){
 
   ctx.textAlign='center';
   ctx.font='13px Fredoka,Arial,sans-serif';ctx.fillStyle='#CDBBEE';
-  ctx.fillText('Sobreviva o tempo todo sem ficar sem energia.',GW/2,243);
+  ctx.fillText('Segure a barra abaixo do máximo até o tempo acabar.',GW/2,243);
 
   const descs={FACIL:'Drena devagar, poucos protozoários.',MEDIO:'Equilibrado.',DIFICIL:'Drena rápido, protozoários frequentes.'};
   for(const r of modeButtonRects()){
@@ -1817,8 +1840,8 @@ const PAUSE_BTN={x:GW-74,y:56,w:28,h:24};
 const PAUSE_CFG={pausable:['playing'],
  eyebrow:()=>'JOGO DO FAGÓCITO · '+MODES[mode].label.toUpperCase()+' · PAUSA',
  title:()=>CHAR_CONFIG[charType].name.toUpperCase()+' · '+Math.max(0,Math.ceil((targetFrames-elapsed)/60))+'s RESTANTES',
- lessons:()=>[['OBJETIVO','#66DDAA','Mantenha a ENERGIA acima de zero até o tempo acabar. Ela drena o tempo todo: '+(charType==='M2'?'repare detritos, necrose e fibrose':'fagocite bactérias')+' para repor.'],
-  ['CONTROLES','#FFD34D','A célula segue o mouse (ou o dedo). A cada 10 alvos, a citocina '+CHAR_CONFIG[charType].cytokine+' ativa por 10 segundos.'],
+ lessons:()=>[['OBJETIVO','#66DDAA',(charType==='M2'?'Segure a DEGRADAÇÃO abaixo do máximo até o tempo acabar: repare detritos, necrose e fibrose antes que se espalhem.':'Segure a INFECÇÃO abaixo do máximo até o tempo acabar: as bactérias se multiplicam — fagocite antes que tomem o tecido.')+' Agora: '+Math.round(100*currentLoad()/MODES[mode].maxLoad)+'%.'],
+  ['CONTROLES','#FFD34D','A célula segue o mouse (ou o dedo). A cada 10 alvos, a citocina '+CHAR_CONFIG[charType].cytokine+' ativa por 10 segundos. Protozoário te atordoa por 1s.'],
   ['PERIGO','#FF6B6B',LEGENDS[charType][1]],
   ['CONCEITO','#CC88FF',LEGENDS[charType][2]]],
  restart:()=>startGame(), menu:()=>{state='menu';}};
