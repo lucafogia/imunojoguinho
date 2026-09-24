@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Rubik+Mono+One&display=swap" rel="stylesheet">
+  <title>Checkpoint — Imunoedição do tumor</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box;}
+    html,body{width:100%;height:100%;overflow:hidden;background:#02040A;
+      touch-action:none;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none;}
+    canvas{display:block;}
+  </style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<script>
+const canvas=document.getElementById('game'),ctx=canvas.getContext('2d');
+const GW=800,GH=450;canvas.width=GW;canvas.height=GH;
+function resizeCanvas(){const ar=GW/GH,vw=window.innerWidth,vh=window.innerHeight;let w,h;if(vw/vh>ar){h=vh;w=h*ar;}else{w=vw;h=w/ar;}canvas.style.width=w+'px';canvas.style.height=h+'px';canvas.style.margin=((vh-h)/2)+'px auto 0';}
+window.addEventListener('resize',resizeCanvas);resizeCanvas();
+const FPS=60,FT=1000/FPS;let lastTS=0,accum=0;
+
+// ===== Kit: fontes, áudio suave, efeitos =====
+const FONT='Fredoka, "Segoe UI", Arial, sans-serif', MONO='"Rubik Mono One", "Courier New", monospace';
+if(document.fonts){document.fonts.load('700 32px Fredoka');document.fonts.load('400 20px "Rubik Mono One"');}
+let muted=localStorage.getItem('imuno_mute')==='1';
+let audioCtx=null,masterGain=null;
+function initAudio(){if(!audioCtx){try{audioCtx=new(window.AudioContext||window.webkitAudioContext)();const comp=audioCtx.createDynamicsCompressor();comp.threshold.value=-18;comp.ratio.value=4;masterGain=audioCtx.createGain();masterGain.gain.value=muted?0:0.7;masterGain.connect(comp);comp.connect(audioCtx.destination);}catch(e){return;}}if(audioCtx.state==='suspended')audioCtx.resume();}
+function toggleMute(){muted=!muted;localStorage.setItem('imuno_mute',muted?'1':'0');if(masterGain)masterGain.gain.value=muted?0:0.7;}
+function tone(f,d,o={}){if(!audioCtx||!masterGain)return;try{const t=audioCtx.currentTime,osc=audioCtx.createOscillator(),g=audioCtx.createGain(),lp=audioCtx.createBiquadFilter();osc.type=o.type||'sine';osc.frequency.setValueAtTime(f,t);if(o.slide)osc.frequency.exponentialRampToValueAtTime(Math.max(20,o.slide),t+d);lp.type='lowpass';lp.frequency.value=o.cutoff||2400;const v=o.vol||0.05,a=o.attack||0.008;g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(v,t+a);g.gain.exponentialRampToValueAtTime(0.0005,t+d);osc.connect(lp);lp.connect(g);g.connect(masterGain);osc.start(t);osc.stop(t+d+0.02);}catch(e){}}
+function chord(notes,d,o={},gap=0.07){notes.forEach((n,i)=>setTimeout(()=>tone(n,d,o),i*gap*1000));}
+function noiseBurst(d,vol=0.05,cutoff=800){if(!audioCtx||!masterGain)return;try{const t=audioCtx.currentTime,len=Math.floor(audioCtx.sampleRate*d),buf=audioCtx.createBuffer(1,len,audioCtx.sampleRate),ch=buf.getChannelData(0);for(let i=0;i<len;i++)ch[i]=(Math.random()*2-1)*(1-i/len);const src=audioCtx.createBufferSource(),g=audioCtx.createGain(),lp=audioCtx.createBiquadFilter();src.buffer=buf;lp.type='lowpass';lp.frequency.value=cutoff;g.gain.setValueAtTime(vol,t);g.gain.exponentialRampToValueAtTime(0.0005,t+d);src.connect(lp);lp.connect(g);g.connect(masterGain);src.start(t);}catch(e){}}
+function vignette(w,h,s=0.5){const g=ctx.createRadialGradient(w/2,h/2,Math.min(w,h)*0.42,w/2,h/2,Math.max(w,h)*0.72);g.addColorStop(0,'rgba(0,0,0,0)');g.addColorStop(1,'rgba(0,0,0,'+s+')');ctx.fillStyle=g;ctx.fillRect(0,0,w,h);}
+const MUTE_BTN={x:GW-40,y:10,w:28,h:24}, HOME_BTN={x:12,y:10,w:82,h:24};
+function pill(x,y,w,h,r,fill,stroke){ctx.fillStyle=fill;ctx.beginPath();ctx.roundRect(x,y,w,h,r);ctx.fill();if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=1;ctx.stroke();}}
+function drawMuteBtn(){const b=MUTE_BTN;ctx.save();pill(b.x,b.y,b.w,b.h,7,'rgba(255,255,255,0.08)','rgba(255,255,255,0.18)');ctx.font='14px '+FONT;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillStyle='rgba(255,255,255,0.85)';ctx.fillText(muted?'🔇':'🔊',b.x+b.w/2,b.y+b.h/2+1);ctx.restore();}
+function drawHomeBtn(){const b=HOME_BTN;ctx.save();pill(b.x,b.y,b.w,b.h,7,'rgba(255,255,255,0.08)','rgba(255,255,255,0.18)');ctx.font='600 11px '+FONT;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillStyle='rgba(255,255,255,0.8)';ctx.fillText('⌂  Menu',b.x+b.w/2,b.y+b.h/2+1);ctx.restore();}
+const hitR=(b,x,y)=>x>=b.x&&x<=b.x+b.w&&y>=b.y&&y<=b.y+b.h;
+function goHome(){location.href='index.html';}
+
+// ---- Sons ----
+function sndDeploy(){tone(600,0.08,{slide:900,vol:0.035});}
+function sndKill(){tone(900,0.12,{slide:400,vol:0.04});noiseBurst(0.08,0.02,3000);}
+function sndExhaust(){tone(200,0.25,{type:'triangle',slide:120,vol:0.04});}
+function sndTherapy(){chord([659,880,1175],0.12,{vol:0.04});}
+function sndRadio(){noiseBurst(0.35,0.07,900);tone(80,0.4,{type:'triangle',slide:40,vol:0.05});}
+function sndError(){tone(180,0.12,{type:'triangle',vol:0.035});}
+function sndSelect(){tone(700,0.05,{vol:0.025});}
+function sndMutate(){tone(1100,0.05,{type:'triangle',vol:0.015});}
+function sndWin(){chord([523,659,784,1047,1319],0.35,{vol:0.05},0.09);}
+function sndLose(){tone(300,0.5,{type:'triangle',slide:70,vol:0.06});noiseBurst(0.4,0.05,400);}
+
+// ===== Configuração =====
+const CX=400,CY=222,FIELD_R=200;
+const MODES={
+  FACIL:  {key:'FACIL',  label:'Fácil',  start:16,max:64,divide:[10,15],mut:0.7, col:'#66DD88',desc:'Tumor lento, muta pouco.'},
+  MEDIO:  {key:'MEDIO',  label:'Médio',  start:22,max:76,divide:[8,13], mut:1.0, col:'#FFC24D',desc:'Equilibrado.'},
+  DIFICIL:{key:'DIFICIL',label:'Difícil',start:28,max:88,divide:[6,10], mut:1.35,col:'#FF6B6B',desc:'Cresce rápido, muta muito.'},
+};
+const modeKeys=['FACIL','MEDIO','DIFICIL'];
+const UNITS={
+  T:  {key:'T',  name:'T CD8+',    cost:14,col:'#5CFF7A',spd:1.7,life:2100,killT:55,hot:'1',desc:'Mata células com MHC-I + antígeno. Encostar em PD-L1 a deixa EXAUSTA.'},
+  NK: {key:'NK', name:'NK',        cost:16,col:'#FFE156',spd:1.6,life:2100,killT:60,hot:'2',desc:'Mata células SEM MHC-I ("missing self"). Ignora as que têm MHC-I.'},
+  CAR:{key:'CAR',name:'CAR-T',     cost:32,col:'#FF7BFF',spd:1.8,life:1800,killT:40,hot:'3',desc:'Mata por antígeno de superfície, sem precisar de MHC. Cara — e o tumor pode perder o antígeno.'},
+  DC: {key:'DC', name:'Dendrítica',cost:18,col:'#FF9B3D',spd:0,  life:3600,killT:0, hot:'4',desc:'Fica parada. Perto de restos de células mortas, coleta antígeno e acelera o priming (sua renda).'},
+};
+const unitKeys=['T','NK','CAR','DC'];
+const THERAPIES={
+  APD1: {key:'APD1', name:'anti-PD-1',  cost:25,cd:1800,dur:720,col:'#FF7BFF',hot:'Q',desc:'12s: PD-L1 deixa de exaustar e as T exaustas acordam.'},
+  IFNG: {key:'IFNG', name:'IFN-γ',      cost:20,cd:1500,dur:600,col:'#37F0FF',hot:'W',desc:'10s: todo o tumor expressa MHC-I — visível às T, mas INVISÍVEL às NK.'},
+  RADIO:{key:'RADIO',name:'Radio',      cost:30,cd:1800,dur:0,  col:'#FFE156',hot:'E',desc:'Clique no campo: mata uma região e libera antígeno para as dendríticas (efeito abscopal).'},
+  CTLA: {key:'CTLA', name:'anti-CTLA-4',cost:20,cd:1800,dur:900,col:'#FF9B3D',hot:'R',desc:'15s: priming em dobro (renda ×2).'},
+};
+const therKeys=['APD1','IFNG','RADIO','CTLA'];
+const FACTS=[
+  'Células NK detectam a AUSÊNCIA de MHC-I: tumores que se escondem das T CD8 ficam expostos às NK.',
+  'PD-1/PD-L1 é um freio fisiológico contra autoimunidade — tumores o sequestram para desligar linfócitos.',
+  'Inibidores de checkpoint (anti-PD-1, anti-CTLA-4) renderam o Nobel de Medicina de 2018 a James Allison e Tasuku Honjo.',
+  'Imunoedição: eliminação, equilíbrio e escape — a resposta imune esculpe o tumor, selecionando clones menos imunogênicos.',
+  'Células CAR-T reconhecem antígenos de superfície sem MHC — por isso funcionam em tumores que perderam MHC-I.',
+  'Tumores "frios" têm poucos linfócitos infiltrados; tumores "quentes" respondem melhor à imunoterapia.',
+  'Efeito abscopal: radioterapia em uma lesão pode ativar resposta imune contra metástases distantes.',
+  'Células dendríticas fazem apresentação cruzada de antígenos tumorais para ativar T CD8.',
+  'Macrófagos associados ao tumor (TAM) do tipo M2 secretam IL-10 e TGF-β e protegem o tumor.',
+  'IFN-γ aumenta a expressão de MHC-I — mais visível às T, mas também protegida das NK.',
+  'Perda de antígeno ("antigen escape") é uma das principais causas de recaída após CAR-T.',
+  'Tregs no microambiente tumoral suprimem as T efetoras — outro alvo da imunoterapia.',
+];
+const LEGEND=[
+  ['#37F0FF','Anel CIANO = MHC-I: a célula tumoral apresenta antígeno às T CD8.'],
+  ['#FF7BFF','Halo MAGENTA = PD-L1: quem encostar (T, CAR-T) fica exausto.'],
+  ['#FFE156','Pontos AMARELOS = antígeno de superfície (alvo da CAR-T).'],
+  ['#5CFF7A','Cada clone que você elimina SELECIONA os sobreviventes: o tumor evolui contra a sua estratégia.'],
+];
+
+// ===== Estado =====
+let state='menu',mode='MEDIO',frame=0,elapsed=0;
+let tumor=[],immune=[],debris=[],particles=[],texts=[],rings=[];
+let points=40, baseIncome=0.045;
+let selected='T', radioAiming=false;
+let active={},cooldowns={};
+let pressure={T:0,NK:0,CAR:0};
+let phase='ELIMINAÇÃO',countHist=[];
+let stats={killed:0,mutations:0,peak:0,exhausted:0};
+let resultFact='',gameOverTime=0,mouseX=0,mouseY=0,shake=0,flash=0,flashCol='255,255,255';
+let hoverTip='',tipLife=0;
+let tRadius=0;
+const rnd=(a,b)=>a+Math.random()*(b-a);
+const dist=(x1,y1,x2,y2)=>Math.hypot(x2-x1,y2-y1);
+function addP(x,y,col,n=8,sp=3){for(let i=0;i<n;i++)particles.push({x,y,vx:(Math.random()-0.5)*sp,vy:(Math.random()-0.5)*sp,life:1,decay:0.02+Math.random()*0.02,r:1.5+Math.random()*2.5,col});}
+function addText(x,y,txt,col='#FFF',sz=11){texts.push({x,y,txt,col,sz,life:1});}
+function addRing(x,y,r,col){rings.push({x,y,r0:4,r,col,life:1});}
+
+function makeCell(x,y,tr){const M=MODES[mode];return {x,y,r:7,mhc1:tr?tr.mhc1:true,pdl1:tr?tr.pdl1:false,ag:tr?tr.ag:true,divT:rnd(M.divide[0],M.divide[1])*60,wob:Math.random()*6.28,flash:0,dead:false};}
+function init(){
+  const M=MODES[mode];
+  frame=0;elapsed=0;tumor=[];immune=[];debris=[];particles=[];texts=[];rings=[];
+  points=40;selected='T';radioAiming=false;active={};cooldowns={};pressure={T:0,NK:0,CAR:0};
+  phase='ELIMINAÇÃO';countHist=[];stats={killed:0,mutations:0,peak:M.start,exhausted:0};shake=0;flash=0;hoverTip='';tipLife=0;
+  for(let i=0;i<M.start;i++){const a=Math.random()*6.28,d=Math.sqrt(Math.random())*Math.sqrt(M.start)*5.5;tumor.push(makeCell(CX+Math.cos(a)*d,CY+Math.sin(a)*d));}
+  // alguns clones já resistentes de saída (mais no difícil)
+  const pre=Math.round(M.start*0.2*M.mut);
+  for(let i=0;i<pre;i++){const c=tumor[Math.floor(Math.random()*tumor.length)];if(i%2===0)c.pdl1=true;else c.mhc1=false;}
+  state='playing';
+}
+function tumorRadius(){let m=0;for(const c of tumor){const d=dist(c.x,c.y,CX,CY)+c.r;if(d>m)m=d;}return m;}
+function divide(p){
+  const M=MODES[mode],k=M.mut;
+  const t={mhc1:p.mhc1,pdl1:p.pdl1,ag:p.ag};
+  const pT=Math.min(1,pressure.T),pNK=Math.min(1,pressure.NK),pC=Math.min(1,pressure.CAR);
+  let mut=false;
+  if(t.mhc1&&Math.random()<(0.03+0.24*pT)*k){t.mhc1=false;mut=true;}
+  else if(!t.mhc1&&Math.random()<(0.03+0.30*pNK)*k){t.mhc1=true;mut=true;}
+  if(!t.pdl1&&Math.random()<(0.03+0.20*pT)*k){t.pdl1=true;mut=true;}
+  if(t.ag&&Math.random()<(0.015+0.30*pC)*k){t.ag=false;mut=true;}
+  const a=Math.random()*6.28;const nc=makeCell(p.x+Math.cos(a)*9,p.y+Math.sin(a)*9,t);
+  tumor.push(nc);if(mut){stats.mutations++;nc.flash=24;sndMutate();}
+  if(tumor.length>stats.peak)stats.peak=tumor.length;
+}
+function killCell(c,by){
+  c.dead=true;debris.push({x:c.x,y:c.y,life:900});stats.killed++;
+  if(by&&pressure[by]!==undefined)pressure[by]+=0.14;
+  addP(c.x,c.y,by?UNITS[by].col:'#FFE156',10,3);addRing(c.x,c.y,22,by?UNITS[by].col:'#FFE156');
+  points=Math.min(999,points+1);sndKill();
+}
+function spawnUnit(type,x,y){
+  const u=UNITS[type];
+  if(points<u.cost){sndError();addText(x,y,'Priming insuficiente ('+u.cost+')','#FF7B7B');return false;}
+  points-=u.cost;immune.push({type,x,y,target:null,st:'seek',t:0,life:u.life,age:0,wob:Math.random()*6.28});
+  sndDeploy();addP(x,y,u.col,10,3);addRing(x,y,18,u.col);return true;
+}
+function useTherapy(key){
+  const th=THERAPIES[key];
+  if((cooldowns[key]||0)>0){sndError();return;}
+  if(points<th.cost){sndError();addText(GW/2,GH-70,'Priming insuficiente ('+th.cost+')','#FF7B7B');return;}
+  if(key==='RADIO'){radioAiming=!radioAiming;sndSelect();return;}
+  points-=th.cost;cooldowns[key]=th.cd;active[key]=th.dur;sndTherapy();
+  if(key==='APD1'){for(const u of immune)if(u.st==='exhausted'){u.st='seek';u.t=0;addText(u.x,u.y-12,'acordou!','#FF7BFF',10);}}
+  addText(GW/2,110,th.name+' ativo','#FFF',13);
+}
+function fireRadio(x,y){
+  const th=THERAPIES.RADIO;
+  if(dist(x,y,CX,CY)>FIELD_R){sndError();return;}
+  points-=th.cost;cooldowns.RADIO=th.cd;radioAiming=false;
+  let n=0;for(const c of tumor){if(!c.dead&&dist(c.x,c.y,x,y)<46){killCell(c,null);n++;}}
+  for(let i=0;i<6;i++)debris.push({x:x+rnd(-30,30),y:y+rnd(-30,30),life:900});
+  addRing(x,y,60,'#FFE156');addP(x,y,'#FFE156',30,6);shake=14;flash=0.35;flashCol='255,225,86';sndRadio();
+  addText(x,y-20,'-'+n+' células · antígeno liberado','#FFE156',12);
+}
+
+// ===== Update =====
+function update(){
+  if(state!=='playing')return;
+  frame++;elapsed++;
+  const M=MODES[mode];
+  if(shake>0)shake--;if(flash>0)flash-=0.02;if(tipLife>0)tipLife--;
+  for(const k in active){if(active[k]>0)active[k]--;}
+  for(const k in cooldowns){if(cooldowns[k]>0)cooldowns[k]--;}
+  for(const k in pressure)pressure[k]*=0.997;
+  // renda
+  let inc=baseIncome;
+  for(const u of immune)if(u.type==='DC'&&u.st==='active')inc+=0.03;
+  if(active.CTLA>0)inc*=2;
+  points=Math.min(999,points+inc);
+
+  // tumor: divisão + empacotamento
+  for(const c of tumor){
+    c.wob+=0.03;if(c.flash>0)c.flash--;
+    // só a borda prolifera (inibição por contato no interior do tumor)
+    c.divT--;if(c.divT<=0){c.divT=rnd(M.divide[0],M.divide[1])*60;if(tumor.length<M.max&&dist(c.x,c.y,CX,CY)>tRadius*0.5)divide(c);}
+  }
+  for(let i=0;i<tumor.length;i++){const a=tumor[i];a.x+=(CX-a.x)*0.0025;a.y+=(CY-a.y)*0.0025;
+    for(let j=i+1;j<tumor.length;j++){const b=tumor[j];const dx=b.x-a.x,dy=b.y-a.y;const d=Math.hypot(dx,dy)||0.01;const min=a.r+b.r+1.5;
+      if(d<min){const push=(min-d)/2;a.x-=dx/d*push;a.y-=dy/d*push;b.x+=dx/d*push;b.y+=dy/d*push;}}}
+  tRadius=tumorRadius();
+
+  // imune
+  const ifng=active.IFNG>0,apd1=active.APD1>0;
+  for(let i=immune.length-1;i>=0;i--){
+    const u=immune[i],cfg=UNITS[u.type];u.age++;u.life--;u.wob+=0.08;
+    if(u.life<=0){addP(u.x,u.y,cfg.col,6,2);immune.splice(i,1);continue;}
+    if(u.type==='DC'){
+      let near=false;
+      for(let j=debris.length-1;j>=0;j--){const d=debris[j];if(dist(d.x,d.y,u.x,u.y)<75){near=true;d.life-=2;if(frame%40===0){points=Math.min(999,points+1);addText(u.x,u.y-14,'+antígeno','#FF9B3D',9);}}}
+      u.st=near?'active':'idle';continue;
+    }
+    if(u.st==='exhausted'){u.t--;if(apd1||u.t<=0){u.st='seek';u.t=0;u.target=null;}continue;}
+    const vis=c=>!c.dead&&(u.type==='T'?((c.mhc1||ifng)&&c.ag):u.type==='NK'?!(c.mhc1||ifng):c.ag);
+    if(!u.target||!vis(u.target)){u.target=null;let best=1e9;for(const c of tumor){if(!vis(c))continue;const d=dist(u.x,u.y,c.x,c.y);if(d<best){best=d;u.target=c;}}u.t=0;}
+    if(!u.target){ // patrulha na borda do tumor
+      const ang=Math.atan2(u.y-CY,u.x-CX)+0.012;const rr=tRadius+26;
+      u.x+=(CX+Math.cos(ang)*rr-u.x)*0.04;u.y+=(CY+Math.sin(ang)*rr-u.y)*0.04;continue;
+    }
+    const tg=u.target,d=dist(u.x,u.y,tg.x,tg.y);
+    const inFog=dist(u.x,u.y,CX,CY)<tRadius+30;
+    const spd=cfg.spd*(inFog?0.62:1);
+    if(d>tg.r+7){u.x+=(tg.x-u.x)/d*spd;u.y+=(tg.y-u.y)/d*spd;u.t=0;}
+    else{
+      if(u.type!=='NK'&&tg.pdl1&&!apd1){u.st='exhausted';u.t=360;u.target=null;stats.exhausted++;addText(u.x,u.y-14,'EXAUSTA (PD-L1)','#FF7BFF',10);sndExhaust();continue;}
+      u.t++;if(u.t>=cfg.killT){killCell(tg,u.type);u.t=0;u.target=null;}
+    }
+  }
+  tumor=tumor.filter(c=>!c.dead);
+  for(let i=debris.length-1;i>=0;i--){debris[i].life--;if(debris[i].life<=0)debris.splice(i,1);}
+  for(let i=particles.length-1;i>=0;i--){const p=particles[i];p.x+=p.vx;p.y+=p.vy;p.vx*=0.95;p.vy*=0.95;p.life-=p.decay;if(p.life<=0)particles.splice(i,1);}
+  for(let i=texts.length-1;i>=0;i--){texts[i].y-=0.4;texts[i].life-=0.012;if(texts[i].life<=0)texts.splice(i,1);}
+  for(let i=rings.length-1;i>=0;i--){rings[i].life-=0.04;if(rings[i].life<=0)rings.splice(i,1);}
+
+  // fase
+  if(frame%60===0){countHist.push(tumor.length);if(countHist.length>8)countHist.shift();
+    if(countHist.length>=4){const dlt=countHist[countHist.length-1]-countHist[0];phase=dlt<=-3?'ELIMINAÇÃO':dlt>=3?'ESCAPE':'EQUILÍBRIO';}}
+
+  if(tumor.length===0){state='won';gameOverTime=Date.now();resultFact=FACTS[Math.floor(Math.random()*FACTS.length)];sndWin();return;}
+  if(tumor.length>=M.max){state='lost';gameOverTime=Date.now();resultFact=FACTS[Math.floor(Math.random()*FACTS.length)];shake=20;sndLose();return;}
+}
+
+// ===== Desenho =====
+function drawField(){
+  const g=ctx.createRadialGradient(CX,CY,20,CX,CY,FIELD_R);g.addColorStop(0,'#08101F');g.addColorStop(1,'#03060E');
+  ctx.fillStyle='#02040A';ctx.fillRect(0,0,GW,GH);
+  ctx.fillStyle=g;ctx.beginPath();ctx.arc(CX,CY,FIELD_R,0,Math.PI*2);ctx.fill();
+  // grade fraca
+  ctx.save();ctx.beginPath();ctx.arc(CX,CY,FIELD_R,0,Math.PI*2);ctx.clip();
+  ctx.strokeStyle='rgba(55,240,255,0.05)';ctx.lineWidth=1;
+  for(let x=CX-FIELD_R;x<=CX+FIELD_R;x+=25){ctx.beginPath();ctx.moveTo(x,CY-FIELD_R);ctx.lineTo(x,CY+FIELD_R);ctx.stroke();}
+  for(let y=CY-FIELD_R;y<=CY+FIELD_R;y+=25){ctx.beginPath();ctx.moveTo(CX-FIELD_R,y);ctx.lineTo(CX+FIELD_R,y);ctx.stroke();}
+  // névoa supressora (TGF-β / TAM) ao redor do tumor
+  if(state==='playing'||state==='won'||state==='lost'){const fr=tRadius+30;const fg=ctx.createRadialGradient(CX,CY,Math.max(1,tRadius*0.5),CX,CY,fr);fg.addColorStop(0,'rgba(255,60,200,0.0)');fg.addColorStop(0.75,'rgba(255,60,200,0.07)');fg.addColorStop(1,'rgba(255,60,200,0)');ctx.fillStyle=fg;ctx.beginPath();ctx.arc(CX,CY,fr,0,Math.PI*2);ctx.fill();
+    ctx.setLineDash([3,6]);ctx.strokeStyle='rgba(255,90,220,0.18)';ctx.beginPath();ctx.arc(CX,CY,fr,0,Math.PI*2);ctx.stroke();ctx.setLineDash([]);}
+  ctx.restore();
+  // borda do campo (ocular)
+  ctx.strokeStyle='rgba(55,240,255,0.25)';ctx.lineWidth=2;ctx.beginPath();ctx.arc(CX,CY,FIELD_R,0,Math.PI*2);ctx.stroke();
+  ctx.strokeStyle='rgba(55,240,255,0.08)';ctx.lineWidth=10;ctx.beginPath();ctx.arc(CX,CY,FIELD_R+6,0,Math.PI*2);ctx.stroke();
+  // barra de escala
+  ctx.strokeStyle='rgba(255,255,255,0.6)';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(CX-FIELD_R+10,GH-64);ctx.lineTo(CX-FIELD_R+50,GH-64);ctx.stroke();
+  ctx.font='9px '+MONO;ctx.textAlign='left';ctx.fillStyle='rgba(255,255,255,0.55)';ctx.fillText('20 µm',CX-FIELD_R+10,GH-70);
+}
+function drawTumorCell(c,ifng){
+  ctx.save();ctx.translate(c.x,c.y);
+  if(c.pdl1){ctx.globalCompositeOperation='lighter';const hg=ctx.createRadialGradient(0,0,c.r*0.5,0,0,c.r+9);hg.addColorStop(0,'rgba(255,90,255,0.35)');hg.addColorStop(1,'rgba(255,90,255,0)');ctx.fillStyle=hg;ctx.beginPath();ctx.arc(0,0,c.r+9,0,Math.PI*2);ctx.fill();ctx.globalCompositeOperation='source-over';}
+  ctx.shadowColor='rgba(70,110,255,0.9)';ctx.shadowBlur=10;
+  ctx.beginPath();for(let i=0;i<=8;i++){const a=i/8*Math.PI*2;const rr=c.r*(1+Math.sin(a*3+c.wob)*0.12);const px=Math.cos(a)*rr,py=Math.sin(a)*rr;if(i===0)ctx.moveTo(px,py);else ctx.lineTo(px,py);}ctx.closePath();
+  const bg=ctx.createRadialGradient(-2,-2,1,0,0,c.r);bg.addColorStop(0,'#7FA0FF');bg.addColorStop(0.6,'#3557E8');bg.addColorStop(1,'#1B2FA8');ctx.fillStyle=bg;ctx.fill();
+  ctx.shadowBlur=0;
+  ctx.fillStyle='rgba(10,20,80,0.55)';ctx.beginPath();ctx.arc(-1.5,0.5,c.r*0.42,0,Math.PI*2);ctx.fill();ctx.beginPath();ctx.arc(2,-1.5,c.r*0.28,0,Math.PI*2);ctx.fill();
+  if(c.mhc1||ifng){ctx.strokeStyle=c.mhc1?'#37F0FF':'rgba(55,240,255,0.7)';ctx.lineWidth=1.6;if(!c.mhc1)ctx.setLineDash([2,2]);ctx.beginPath();ctx.arc(0,0,c.r+2.5,0,Math.PI*2);ctx.stroke();ctx.setLineDash([]);}
+  if(c.ag){ctx.fillStyle='#FFE156';for(let i=0;i<3;i++){const a=i/3*Math.PI*2+c.wob*0.5;ctx.beginPath();ctx.arc(Math.cos(a)*(c.r+0.5),Math.sin(a)*(c.r+0.5),1.6,0,Math.PI*2);ctx.fill();}}
+  if(c.flash>0){ctx.strokeStyle=`rgba(255,255,255,${c.flash/24})`;ctx.lineWidth=2;ctx.beginPath();ctx.arc(0,0,c.r+5+(24-c.flash)*0.6,0,Math.PI*2);ctx.stroke();}
+  ctx.restore();
+}
+function drawUnit(u){
+  const cfg=UNITS[u.type];ctx.save();ctx.translate(u.x,u.y);
+  const fade=u.life<120?u.life/120:1;ctx.globalAlpha=fade;
+  if(u.type==='DC'){
+    const act=u.st==='active';ctx.shadowColor=cfg.col;ctx.shadowBlur=act?18:8;
+    ctx.strokeStyle=cfg.col;ctx.lineWidth=2;for(let i=0;i<8;i++){const a=i/8*Math.PI*2+u.wob*0.3;const l=9+(act?Math.sin(u.wob*2+i)*3:0);ctx.beginPath();ctx.moveTo(Math.cos(a)*4,Math.sin(a)*4);ctx.lineTo(Math.cos(a)*(l+4),Math.sin(a)*(l+4));ctx.stroke();}
+    ctx.beginPath();ctx.arc(0,0,6,0,Math.PI*2);ctx.fillStyle=cfg.col;ctx.fill();ctx.shadowBlur=0;
+    ctx.fillStyle='rgba(60,20,0,0.5)';ctx.beginPath();ctx.arc(0,0,2.5,0,Math.PI*2);ctx.fill();
+    ctx.restore();return;
+  }
+  const ex=u.st==='exhausted';const col=ex?'#8A8F9C':cfg.col;
+  if(u.target&&u.t>0&&!ex){ // feixe de lise
+    ctx.save();ctx.globalCompositeOperation='lighter';ctx.strokeStyle=col;ctx.lineWidth=2;ctx.globalAlpha=0.35+0.5*(u.t/cfg.killT);ctx.shadowColor=col;ctx.shadowBlur=10;
+    ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(u.target.x-u.x,u.target.y-u.y);ctx.stroke();ctx.restore();
+  }
+  ctx.shadowColor=col;ctx.shadowBlur=ex?4:14;
+  ctx.beginPath();ctx.arc(0,0,6.5,0,Math.PI*2);const g=ctx.createRadialGradient(-2,-2,1,0,0,6.5);g.addColorStop(0,'#FFFFFF');g.addColorStop(0.4,col);g.addColorStop(1,col);ctx.fillStyle=g;ctx.fill();ctx.shadowBlur=0;
+  ctx.fillStyle='rgba(0,0,0,0.35)';ctx.beginPath();ctx.arc(0.5,0.5,2.6,0,Math.PI*2);ctx.fill();
+  if(u.type==='CAR'){ctx.strokeStyle='#FFF';ctx.lineWidth=1;for(let i=0;i<4;i++){const a=i/4*Math.PI*2+u.wob;ctx.beginPath();ctx.moveTo(Math.cos(a)*6.5,Math.sin(a)*6.5);ctx.lineTo(Math.cos(a)*10,Math.sin(a)*10);ctx.stroke();}}
+  if(ex){ctx.font='700 9px '+FONT;ctx.textAlign='center';ctx.fillStyle='rgba(255,255,255,0.7)';ctx.fillText('zz',7,-6);}
+  ctx.restore();
+}
+function drawWorld(){
+  ctx.save();if(shake>0)ctx.translate((Math.random()-0.5)*shake,(Math.random()-0.5)*shake);
+  drawField();
+  const ifng=active.IFNG>0;
+  for(const d of debris){ctx.globalAlpha=Math.min(1,d.life/300)*0.8;ctx.fillStyle='#FFE156';ctx.beginPath();ctx.arc(d.x,d.y,1.6,0,Math.PI*2);ctx.fill();}ctx.globalAlpha=1;
+  for(const c of tumor)drawTumorCell(c,ifng);
+  for(const u of immune)drawUnit(u);
+  ctx.save();ctx.globalCompositeOperation='lighter';
+  for(const r of rings){ctx.globalAlpha=r.life*0.8;ctx.strokeStyle=r.col;ctx.lineWidth=2;ctx.beginPath();ctx.arc(r.x,r.y,r.r0+(r.r-r.r0)*(1-r.life),0,Math.PI*2);ctx.stroke();}
+  for(const p of particles){ctx.globalAlpha=p.life;ctx.shadowColor=p.col;ctx.shadowBlur=6;ctx.beginPath();ctx.arc(p.x,p.y,p.r*p.life,0,Math.PI*2);ctx.fillStyle=p.col;ctx.fill();}
+  ctx.restore();ctx.globalAlpha=1;
+  // mira da radioterapia / fantasma da unidade
+  if(state==='playing'){
+    const inField=dist(mouseX,mouseY,CX,CY)<FIELD_R;
+    if(radioAiming&&inField){ctx.strokeStyle='rgba(255,225,86,0.8)';ctx.lineWidth=1.5;ctx.setLineDash([4,4]);ctx.beginPath();ctx.arc(mouseX,mouseY,46,0,Math.PI*2);ctx.stroke();ctx.setLineDash([]);ctx.beginPath();ctx.moveTo(mouseX-8,mouseY);ctx.lineTo(mouseX+8,mouseY);ctx.moveTo(mouseX,mouseY-8);ctx.lineTo(mouseX,mouseY+8);ctx.stroke();}
+    else if(inField&&mouseY<GH-56){ctx.globalAlpha=0.45;ctx.strokeStyle=UNITS[selected].col;ctx.lineWidth=1.5;ctx.setLineDash([3,3]);ctx.beginPath();ctx.arc(mouseX,mouseY,8,0,Math.PI*2);ctx.stroke();ctx.setLineDash([]);ctx.globalAlpha=1;}
+  }
+  for(const t of texts){ctx.globalAlpha=t.life;ctx.font='600 '+t.sz+'px '+FONT;ctx.textAlign='center';ctx.fillStyle='rgba(0,0,0,0.5)';ctx.fillText(t.txt,t.x+1,t.y+1);ctx.fillStyle=t.col;ctx.fillText(t.txt,t.x,t.y);}ctx.globalAlpha=1;
+  ctx.restore();
+  vignette(GW,GH,0.35);
+  if(flash>0){ctx.fillStyle=`rgba(${flashCol},${flash})`;ctx.fillRect(0,0,GW,GH);}
+}
+function drawHUD(){
+  const M=MODES[mode];
+  // TUMOR meter
+  const pc=phase==='ELIMINAÇÃO'?'#5CFF7A':phase==='EQUILÍBRIO'?'#FFE156':'#FF5C7A';
+  pill(12,44,190,70,10,'rgba(0,0,0,0.5)','rgba(255,255,255,0.12)');
+  ctx.font='9px '+MONO;ctx.textAlign='left';ctx.fillStyle='rgba(255,255,255,0.6)';ctx.fillText('TUMOR',22,58);
+  ctx.textAlign='right';ctx.fillStyle='#FFF';ctx.fillText(tumor.length+' / '+M.max,192,58);
+  ctx.fillStyle='rgba(255,255,255,0.1)';ctx.beginPath();ctx.roundRect(22,64,170,8,4);ctx.fill();
+  const ratio=Math.min(1,tumor.length/M.max);ctx.fillStyle=pc;ctx.beginPath();ctx.roundRect(22,64,170*ratio,8,4);ctx.fill();
+  ctx.font='700 12px '+FONT;ctx.textAlign='left';ctx.fillStyle=pc;ctx.fillText(phase,22,92);
+  ctx.font='9px '+MONO;ctx.textAlign='right';ctx.fillStyle='rgba(255,255,255,0.5)';
+  const nM=tumor.filter(c=>!c.mhc1).length,nP=tumor.filter(c=>c.pdl1).length,nA=tumor.filter(c=>!c.ag).length;
+  ctx.fillText('-MHC '+nM+'  +PDL1 '+nP+'  -Ag '+nA,192,106);
+  // PRIMING
+  pill(GW-202,44,190,34,10,'rgba(0,0,0,0.5)','rgba(255,255,255,0.12)');
+  ctx.font='9px '+MONO;ctx.textAlign='left';ctx.fillStyle='rgba(255,255,255,0.6)';ctx.fillText('PRIMING',GW-192,58);
+  ctx.font='400 16px '+MONO;ctx.textAlign='right';ctx.fillStyle='#FFE156';ctx.fillText(Math.floor(points),GW-22,70);
+  ctx.font='9px '+MONO;ctx.textAlign='left';ctx.fillStyle='rgba(255,255,255,0.45)';ctx.fillText((active.CTLA>0?'×2 ':'')+'tempo '+Math.floor(elapsed/60)+'s',GW-192,72);
+  // terapias ativas (topo centro)
+  let ax=GW/2-((Object.keys(active).filter(k=>active[k]>0).length)*46)/2;
+  for(const k of therKeys){if(active[k]>0){const th=THERAPIES[k];pill(ax,12,42,20,6,'rgba(0,0,0,0.5)',th.col);ctx.font='9px '+MONO;ctx.textAlign='center';ctx.fillStyle=th.col;ctx.fillText(Math.ceil(active[k]/60)+'s',ax+21,26);ctx.fillStyle=th.col;ctx.fillRect(ax+3,ax>0?30:30,36*(active[k]/th.dur),2);ax+=46;}}
+
+  // Barra inferior
+  ctx.fillStyle='rgba(2,4,10,0.92)';ctx.fillRect(0,GH-56,GW,56);
+  ctx.strokeStyle='rgba(55,240,255,0.15)';ctx.beginPath();ctx.moveTo(0,GH-56);ctx.lineTo(GW,GH-56);ctx.stroke();
+  // unidades
+  ctx.font='8px '+MONO;ctx.textAlign='left';ctx.fillStyle='rgba(255,255,255,0.4)';ctx.fillText('CÉLULAS',16,GH-44);
+  unitKeys.forEach((k,i)=>{const u=UNITS[k];const bx=30+i*58,by=GH-24;const can=points>=u.cost;const sel=selected===k&&!radioAiming;
+    if(sel){ctx.save();ctx.shadowColor=u.col;ctx.shadowBlur=14;ctx.beginPath();ctx.arc(bx,by,17,0,Math.PI*2);ctx.fillStyle='rgba(255,255,255,0.08)';ctx.fill();ctx.restore();ctx.strokeStyle=u.col;ctx.lineWidth=2;ctx.beginPath();ctx.arc(bx,by,17,0,Math.PI*2);ctx.stroke();}
+    else{ctx.strokeStyle='rgba(255,255,255,0.15)';ctx.lineWidth=1;ctx.beginPath();ctx.arc(bx,by,17,0,Math.PI*2);ctx.stroke();}
+    ctx.globalAlpha=can?1:0.4;ctx.beginPath();ctx.arc(bx,by-2,6,0,Math.PI*2);ctx.fillStyle=u.col;ctx.fill();
+    if(k==='DC'){ctx.strokeStyle=u.col;for(let j=0;j<6;j++){const a=j/6*Math.PI*2;ctx.beginPath();ctx.moveTo(bx+Math.cos(a)*6,by-2+Math.sin(a)*6);ctx.lineTo(bx+Math.cos(a)*10,by-2+Math.sin(a)*10);ctx.stroke();}}
+    ctx.font='8px '+MONO;ctx.textAlign='center';ctx.fillStyle=can?'#FFE156':'#FF7B7B';ctx.fillText(u.cost,bx,by+12);ctx.globalAlpha=1;
+    ctx.font='8px '+MONO;ctx.fillStyle='rgba(255,255,255,0.35)';ctx.fillText(u.hot,bx+13,by-11);
+  });
+  // terapias
+  ctx.font='8px '+MONO;ctx.textAlign='left';ctx.fillStyle='rgba(255,255,255,0.4)';ctx.fillText('TERAPIAS',GW-262,GH-44);
+  therKeys.forEach((k,i)=>{const th=THERAPIES[k];const bx=GW-262+i*62,by=GH-40,bw=54,bh=32;const cd=cooldowns[k]||0;const can=points>=th.cost&&cd<=0;const on=(active[k]||0)>0||(k==='RADIO'&&radioAiming);
+    pill(bx,by,bw,bh,7,on?'rgba(255,255,255,0.1)':'rgba(255,255,255,0.04)',on?th.col:'rgba(255,255,255,0.15)');
+    ctx.globalAlpha=can||on?1:0.45;ctx.font='700 9px '+FONT;ctx.textAlign='center';ctx.fillStyle=th.col;ctx.fillText(th.name,bx+bw/2,by+13);
+    ctx.font='8px '+MONO;ctx.fillStyle='#FFE156';ctx.fillText(th.cost,bx+bw/2,by+26);ctx.globalAlpha=1;
+    if(cd>0){ctx.fillStyle='rgba(0,0,0,0.55)';ctx.beginPath();ctx.roundRect(bx,by,bw,bh*(cd/th.cd),7);ctx.fill();ctx.font='8px '+MONO;ctx.fillStyle='rgba(255,255,255,0.7)';ctx.fillText(Math.ceil(cd/60)+'s',bx+bw/2,by+20);}
+    ctx.font='8px '+MONO;ctx.fillStyle='rgba(255,255,255,0.35)';ctx.fillText(th.hot,bx+bw-6,by-3);
+  });
+  // tooltip
+  const tip=hoverTip||(tipLife>0?tipShown:'')||(radioAiming?'RADIO: clique dentro do campo para irradiar a região.':'');
+  if(tip){ctx.font='500 10px '+FONT;ctx.textAlign='center';const tw=Math.min(GW-40,ctx.measureText(tip).width+22);pill(GW/2-tw/2,GH-80,tw,20,6,'rgba(0,0,0,0.75)','rgba(255,255,255,0.15)');ctx.fillStyle='rgba(255,255,220,0.95)';ctx.textBaseline='middle';ctx.fillText(tip,GW/2,GH-70);ctx.textBaseline='alphabetic';}
+}
+let tipShown='';
+
+function modeRects(){const bw=170,bh=66,gap=18,total=3*bw+2*gap,x0=(GW-total)/2,y=GH-96;return modeKeys.map((k,i)=>({key:k,x:x0+i*(bw+gap),y,w:bw,h:bh}));}
+function drawTitle(y,size){
+  ctx.font='700 '+size+'px '+FONT;ctx.textAlign='center';
+  const g=ctx.createLinearGradient(GW/2-170,0,GW/2+170,0);g.addColorStop(0,'#37F0FF');g.addColorStop(0.5,'#FFFFFF');g.addColorStop(1,'#FF7BFF');
+  ctx.save();ctx.shadowColor='rgba(55,240,255,0.9)';ctx.shadowBlur=34;ctx.fillStyle=g;ctx.fillText('CHECKPOINT',GW/2,y);ctx.shadowColor='rgba(255,123,255,0.8)';ctx.shadowBlur=12;ctx.fillText('CHECKPOINT',GW/2,y);ctx.restore();
+}
+function drawMenu(){
+  drawField();
+  // tumor decorativo
+  const t=Date.now()*0.001;
+  for(let i=0;i<14;i++){const a=i*0.9+t*0.1,d=12+(i%4)*11;const c={x:CX+Math.cos(a)*d,y:CY+40+Math.sin(a)*d,r:7,mhc1:i%3!==0,pdl1:i%4===0,ag:i%5!==0,wob:t+i,flash:0};drawTumorCell(c,false);}
+  for(let i=0;i<5;i++){const a=t*0.4+i*1.26;drawUnit({type:i%2?'NK':'T',x:CX+Math.cos(a)*95,y:CY+40+Math.sin(a)*70,st:'seek',t:0,life:999,wob:t});}
+  ctx.fillStyle='rgba(2,4,10,0.55)';ctx.fillRect(0,0,GW,GH);
+  drawTitle(GH*0.2,60);
+  ctx.font='9px '+MONO;ctx.fillStyle='rgba(55,240,255,0.8)';ctx.fillText('IMUNOEDIÇÃO DO TUMOR · IMUNIDADE TUMORAL',GW/2,GH*0.2+26);
+  ctx.font='500 13px '+FONT;ctx.fillStyle='rgba(230,235,255,0.85)';
+  ctx.fillText('O tumor cresce no centro do campo. Você o ataca de fora — mas cada clone que você mata',GW/2,GH*0.52);
+  ctx.fillText('seleciona os sobreviventes. Ele evolui contra a sua estratégia. Combine, ou perca.',GW/2,GH*0.52+20);
+  ctx.font='600 12px '+FONT;ctx.fillStyle='#FFE156';const mob='ontouchstart' in window;
+  ctx.fillText(mob?'TOQUE para soltar células · botões embaixo para terapias':'CLIQUE no campo para soltar células · 1-4 escolhe · Q/W/E/R terapias',GW/2,GH*0.7);
+  ctx.font='700 16px '+FONT;const bl=Math.sin(Date.now()*0.004)*0.5+0.5;ctx.fillStyle=`rgba(255,255,255,${0.5+bl*0.5})`;
+  ctx.fillText(mob?'TOQUE PARA COMEÇAR':'PRESSIONE ESPAÇO PARA COMEÇAR',GW/2,GH*0.88);
+}
+function wrapText(text,maxW){const ws=text.split(' ');let lines=[],cur='';for(const w of ws){const t=cur?cur+' '+w:w;if(ctx.measureText(t).width>maxW){lines.push(cur);cur=w;}else cur=t;}if(cur)lines.push(cur);return lines;}
+function drawModeSelect(){
+  ctx.fillStyle='#02040A';ctx.fillRect(0,0,GW,GH);
+  ctx.font='700 24px '+FONT;ctx.textAlign='center';ctx.fillStyle='#FFF';ctx.save();ctx.shadowColor='rgba(55,240,255,0.8)';ctx.shadowBlur=16;ctx.fillText('COMO LER O TUMOR',GW/2,40);ctx.restore();
+  // célula-exemplo grande com legendas
+  const ex=140,ey=150;ctx.save();ctx.translate(ex,ey);ctx.scale(4,4);drawTumorCell({x:0,y:0,r:7,mhc1:true,pdl1:true,ag:true,wob:Date.now()*0.002,flash:0},false);ctx.restore();
+  const lx=250,lw=GW-270;let yy=78;
+  for(const [col,txt] of LEGEND){ctx.fillStyle=col;ctx.beginPath();ctx.arc(lx+6,yy-4,5,0,Math.PI*2);ctx.fill();ctx.font='500 12px '+FONT;ctx.textAlign='left';ctx.fillStyle='#E6EAF5';const ls=wrapText(txt,lw-30);for(let j=0;j<ls.length;j++)ctx.fillText(ls[j],lx+20,yy+j*15);yy+=ls.length*15+12;}
+  // efetores
+  const eff=[['T','verde: precisa de MHC-I + antígeno'],['NK','amarela: mata quem NÃO tem MHC-I'],['CAR','rosa: mata por antígeno, sem MHC'],['DC','laranja: renda perto de restos']];
+  eff.forEach(([k,d],i)=>{const bx=60+i*185,by=258;drawUnit({type:k,x:bx,y:by,st:'seek',t:0,life:999,wob:Date.now()*0.003});ctx.font='500 10px '+FONT;ctx.textAlign='left';ctx.fillStyle=UNITS[k].col;ctx.fillText(UNITS[k].name,bx+14,by-2);ctx.fillStyle='rgba(230,235,255,0.75)';ctx.fillText(d,bx+14,by+11);});
+  ctx.font='500 12px '+FONT;ctx.textAlign='center';ctx.fillStyle='#CDBBEE';ctx.fillText('Vença eliminando todas as células. Perca se o tumor atingir o limite (escape / metástase).',GW/2,300);
+  for(const r of modeRects()){const M=MODES[r.key];const hov=hitR(r,mouseX,mouseY);pill(r.x,r.y,r.w,r.h,12,hov?'rgba(255,255,255,0.1)':'rgba(255,255,255,0.04)',M.col);
+    ctx.font='700 18px '+FONT;ctx.textAlign='center';ctx.fillStyle=M.col;ctx.fillText(M.label,r.x+r.w/2,r.y+26);
+    ctx.font='9px '+MONO;ctx.fillStyle='#FFF';ctx.fillText(M.start+' células · limite '+M.max,r.x+r.w/2,r.y+43);
+    ctx.font='500 9px '+FONT;ctx.fillStyle='rgba(220,210,235,0.6)';ctx.fillText(M.desc,r.x+r.w/2,r.y+58);}
+  const mob='ontouchstart' in window;ctx.font='500 10px '+FONT;ctx.textAlign='center';ctx.fillStyle='rgba(200,180,220,0.55)';ctx.fillText(mob?'Toque em uma dificuldade':'Clique numa dificuldade · ou tecle 1 / 2 / 3',GW/2,GH-12);
+}
+function drawEnd(won){
+  ctx.fillStyle=won?'rgba(2,20,12,0.86)':'rgba(24,4,12,0.88)';ctx.fillRect(0,0,GW,GH);
+  ctx.font='700 40px '+FONT;ctx.textAlign='center';ctx.save();ctx.shadowColor=won?'#5CFF7A':'#FF5C7A';ctx.shadowBlur=20;ctx.fillStyle=won?'#7DFF9A':'#FF7B95';ctx.fillText(won?'REMISSÃO!':'ESCAPE TUMORAL',GW/2,GH*0.14);ctx.restore();
+  ctx.font='500 13px '+FONT;ctx.fillStyle=won?'#BFE8CC':'#F0C2CC';
+  ctx.fillText(won?'O sistema imune eliminou todos os clones antes que o tumor escapasse.':'O tumor selecionou clones resistentes e ultrapassou o limite — metástase.',GW/2,GH*0.14+30);
+  ctx.font='11px '+MONO;ctx.fillStyle='#FFF';
+  ctx.fillText(MODES[mode].label+' · '+stats.killed+' eliminadas · '+stats.mutations+' mutações · pico '+stats.peak+' · '+Math.floor(elapsed/60)+'s',GW/2,GH*0.32);
+  ctx.font='500 11px '+FONT;ctx.fillStyle='rgba(255,255,255,0.6)';ctx.fillText('T exaustas por PD-L1: '+stats.exhausted,GW/2,GH*0.32+20);
+  const fy=GH*0.48,fh=GH*0.26;pill(GW*0.08,fy-8,GW*0.84,fh,8,'rgba(255,255,255,0.05)','rgba(55,240,255,0.25)');
+  ctx.font='700 13px '+FONT;ctx.fillStyle='#37F0FF';ctx.fillText('Você sabia?',GW/2,fy+12);
+  ctx.font='500 12px '+FONT;ctx.fillStyle='#DDE6FF';const ls=wrapText(resultFact,GW*0.74);for(let i=0;i<ls.length;i++)ctx.fillText(ls[i],GW/2,fy+30+i*17);
+  ctx.font='700 15px '+FONT;const bl=Math.sin(Date.now()*0.004)*0.5+0.5;ctx.fillStyle=`rgba(255,255,255,${0.5+bl*0.5})`;const mob='ontouchstart' in window;
+  ctx.fillText(mob?'TOQUE PARA CONTINUAR':'ESPAÇO PARA CONTINUAR',GW/2,GH*0.9);
+}
+function render(){
+  ctx.clearRect(0,0,GW,GH);
+  if(state==='menu'){drawMenu();drawHomeBtn();drawMuteBtn();return;}
+  if(state==='modeselect'){drawModeSelect();drawHomeBtn();drawMuteBtn();return;}
+  drawWorld();
+  if(state==='playing')drawHUD();
+  if(state==='won'){drawEnd(true);drawHomeBtn();}
+  if(state==='lost'){drawEnd(false);drawHomeBtn();}
+  drawMuteBtn();
+}
+
+// ===== Input =====
+function canvasXY(cx,cy){const r=canvas.getBoundingClientRect();return{x:(cx-r.left)*(GW/r.width),y:(cy-r.top)*(GH/r.height)};}
+function unitBtnAt(x,y){for(let i=0;i<unitKeys.length;i++){if(dist(x,y,30+i*58,GH-24)<=18)return unitKeys[i];}return null;}
+function therBtnAt(x,y){for(let i=0;i<therKeys.length;i++){const bx=GW-262+i*62,by=GH-40;if(x>=bx&&x<=bx+54&&y>=by&&y<=by+32)return therKeys[i];}return null;}
+function press(x,y){
+  initAudio();
+  if(hitR(MUTE_BTN,x,y)){toggleMute();return;}
+  if(state!=='playing'&&hitR(HOME_BTN,x,y)){goHome();return;}
+  if(state==='menu'){state='modeselect';sndSelect();return;}
+  if(state==='modeselect'){for(const r of modeRects()){if(hitR(r,x,y)){mode=r.key;init();sndSelect();return;}}return;}
+  if(state==='won'||state==='lost'){if(Date.now()-gameOverTime>500){state='modeselect';}return;}
+  if(state==='playing'){
+    const ub=unitBtnAt(x,y);if(ub){selected=ub;radioAiming=false;tipShown=UNITS[ub].desc;tipLife=240;sndSelect();return;}
+    const tb=therBtnAt(x,y);if(tb){tipShown=THERAPIES[tb].desc;tipLife=240;useTherapy(tb);return;}
+    if(y>=GH-56)return;
+    if(dist(x,y,CX,CY)>FIELD_R){addText(x,y,'Fora do campo','#FF7B7B',10);return;}
+    if(radioAiming){fireRadio(x,y);return;}
+    spawnUnit(selected,x,y);
+  }
+}
+function move(x,y){
+  mouseX=x;mouseY=y;hoverTip='';
+  if(state==='playing'){const ub=unitBtnAt(x,y);if(ub)hoverTip=UNITS[ub].desc;const tb=therBtnAt(x,y);if(tb)hoverTip=THERAPIES[tb].desc;}
+}
+canvas.addEventListener('mousedown',e=>{if(e.button!==0)return;const p=canvasXY(e.clientX,e.clientY);press(p.x,p.y);});
+canvas.addEventListener('mousemove',e=>{const p=canvasXY(e.clientX,e.clientY);move(p.x,p.y);});
+canvas.addEventListener('touchstart',e=>{e.preventDefault();const t=e.touches[0],p=canvasXY(t.clientX,t.clientY);move(p.x,p.y);press(p.x,p.y);},{passive:false});
+canvas.addEventListener('touchmove',e=>{e.preventDefault();const t=e.touches[0],p=canvasXY(t.clientX,t.clientY);move(p.x,p.y);},{passive:false});
+canvas.addEventListener('contextmenu',e=>e.preventDefault());
+document.addEventListener('keydown',e=>{
+  if(e.code==='Space'){e.preventDefault();if(state==='menu'){initAudio();state='modeselect';}else if(state==='modeselect'){init();}else if(state==='won'||state==='lost'){state='modeselect';}return;}
+  if(state==='modeselect'){if(e.code==='Digit1'){mode='FACIL';init();}if(e.code==='Digit2'){mode='MEDIO';init();}if(e.code==='Digit3'){mode='DIFICIL';init();}return;}
+  if(state!=='playing')return;
+  const k=e.key.toLowerCase();
+  if(k==='1'){selected='T';radioAiming=false;sndSelect();}if(k==='2'){selected='NK';radioAiming=false;sndSelect();}if(k==='3'){selected='CAR';radioAiming=false;sndSelect();}if(k==='4'){selected='DC';radioAiming=false;sndSelect();}
+  if(k==='q')useTherapy('APD1');if(k==='w')useTherapy('IFNG');if(k==='e')useTherapy('RADIO');if(k==='r')useTherapy('CTLA');
+  if(e.code==='Escape')radioAiming=false;
+});
+
+function loop(ts){if(!lastTS)lastTS=ts;accum+=ts-lastTS;lastTS=ts;if(accum>200)accum=200;while(accum>=FT){update();accum-=FT;}render();requestAnimationFrame(loop);}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
