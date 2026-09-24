@@ -24,14 +24,23 @@
     #ovl .btn.small{font-size:9px;padding:9px;margin-top:8px;}
     #ovl .btn:focus-visible{outline:2px solid var(--ac);outline-offset:2px;}
     #ovl .btn:hover{filter:brightness(1.1);}
+  
+    /* Aviso para girar o celular (só em retrato + toque) */
+    #rotate{display:none;position:fixed;inset:0;z-index:20;background:#05070d;color:#fff;font-family:Fredoka,'Segoe UI',Arial,sans-serif;text-align:center;align-items:center;justify-content:center;flex-direction:column;gap:10px;padding:24px;}
+    #rotate .ico{font-size:72px;line-height:1;animation:rot 1.6s ease-in-out infinite;}
+    #rotate b{font-size:28px;letter-spacing:.06em;}
+    #rotate span{font-size:15px;opacity:.75;max-width:32ch;}
+    @keyframes rot{0%,100%{transform:rotate(0)}50%{transform:rotate(-90deg)}}
+    @media (orientation:portrait) and (pointer:coarse){#rotate{display:flex;}}
   </style>
 </head>
 <body>
 <canvas id="game"></canvas>
+<div id="rotate" role="alert"><div class="ico">📱</div><b>GIRE O CELULAR</b><span>Este jogo é em paisagem: deite a tela para jogar.</span></div>
 <div id="ovl" class="hide" role="dialog" aria-modal="true" aria-label="Pausa"><div class="card" id="card"></div></div>
 <script>
 const canvas=document.getElementById('game'),ctx=canvas.getContext('2d');
-const GW=800,GH=450;canvas.width=GW;canvas.height=GH;
+const GH=450,GW=Math.round(Math.min(1100,Math.max(800,GH*window.innerWidth/Math.max(1,window.innerHeight)))); // largura acompanha a proporção da telacanvas.width=GW;canvas.height=GH;
 function resizeCanvas(){const ar=GW/GH,vw=window.innerWidth,vh=window.innerHeight;let w,h;if(vw/vh>ar){h=vh;w=h*ar;}else{w=vw;h=w/ar;}canvas.style.width=w+'px';canvas.style.height=h+'px';canvas.style.margin=((vh-h)/2)+'px auto 0';}
 window.addEventListener('resize',resizeCanvas);resizeCanvas();
 const FPS=60,FT=1000/FPS;let lastTS=0,accum=0;
@@ -67,7 +76,7 @@ function sndWin(){chord([523,659,784,1047,1319],0.35,{vol:0.05},0.09);}
 function sndLose(){tone(300,0.5,{type:'triangle',slide:70,vol:0.06});noiseBurst(0.4,0.05,400);}
 
 // ===== Configuração =====
-const CX=400,CY=222,FIELD_R=200;
+const CX=GW/2,CY=222,FIELD_R=200;
 const MODES={
   FACIL:  {key:'FACIL',  label:'Fácil',  start:16,max:64,divide:[12,18],mut:0.7, col:'#66DD88',desc:'Tumor lento, muta pouco.'},
   MEDIO:  {key:'MEDIO',  label:'Médio',  start:22,max:76,divide:[7,11], mut:1.1, col:'#FFC24D',desc:'Equilibrado.'},
@@ -537,6 +546,10 @@ function togglePause(){
 document.addEventListener('keydown',e=>{if(e.code==='Escape'||e.code==='KeyP'){if(PAUSE_CFG.pausable.includes(state)||state==='paused'){e.preventDefault();togglePause();}}});
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&PAUSE_CFG.pausable.includes(state))togglePause();});
 
+
+// Ao girar o celular fora de uma partida, recarrega para recalcular a largura do canvas
+window.addEventListener('orientationchange',()=>{setTimeout(()=>{const want=Math.round(Math.min(1100,Math.max(800,GH*window.innerWidth/Math.max(1,window.innerHeight))));
+  if(Math.abs(want-GW)>60&&!['playing','countdown','dying','paused'].includes(state))location.reload();},350);});
 </script>
 </body>
 </html>

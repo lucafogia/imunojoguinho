@@ -24,14 +24,23 @@
     #ovl .btn.small{font-size:9px;padding:9px;margin-top:8px;}
     #ovl .btn:focus-visible{outline:2px solid var(--ac);outline-offset:2px;}
     #ovl .btn:hover{filter:brightness(1.1);}
+  
+    /* Aviso para girar o celular (só em retrato + toque) */
+    #rotate{display:none;position:fixed;inset:0;z-index:20;background:#05070d;color:#fff;font-family:Fredoka,'Segoe UI',Arial,sans-serif;text-align:center;align-items:center;justify-content:center;flex-direction:column;gap:10px;padding:24px;}
+    #rotate .ico{font-size:72px;line-height:1;animation:rot 1.6s ease-in-out infinite;}
+    #rotate b{font-size:28px;letter-spacing:.06em;}
+    #rotate span{font-size:15px;opacity:.75;max-width:32ch;}
+    @keyframes rot{0%,100%{transform:rotate(0)}50%{transform:rotate(-90deg)}}
+    @media (orientation:portrait) and (pointer:coarse){#rotate{display:flex;}}
   </style>
 </head>
 <body>
 <canvas id="game"></canvas>
+<div id="rotate" role="alert"><div class="ico">📱</div><b>GIRE O CELULAR</b><span>Este jogo é em paisagem: deite a tela para jogar.</span></div>
 <div id="ovl" class="hide" role="dialog" aria-modal="true" aria-label="Pausa"><div class="card" id="card"></div></div>
 <script>
 const canvas=document.getElementById('game'),ctx=canvas.getContext('2d');
-const GW=800,GH=450;
+const GH=450,GW=Math.round(Math.min(1100,Math.max(800,GH*window.innerWidth/Math.max(1,window.innerHeight)))); // largura acompanha a proporção da tela
 canvas.width=GW;canvas.height=GH;
 function resizeCanvas(){
   const ar=GW/GH,vw=window.innerWidth,vh=window.innerHeight;
@@ -1005,7 +1014,8 @@ function drawMenu(){
   const tg=ctx.createLinearGradient(GW/2-160,80,GW/2+160,110);tg.addColorStop(0,'#FF8888');tg.addColorStop(0.3,'#FFCC77');tg.addColorStop(0.6,'#FFDD88');tg.addColorStop(1,'#88BBFF');ctx.fillStyle=tg;ctx.fillText('Memória Imune',GW/2,90);ctx.restore();
   ctx.font='bold 12px Fredoka,Arial,sans-serif';ctx.fillStyle='rgba(255,220,200,0.75)';ctx.fillText('RESPOSTA PRIMÁRIA vs. SECUNDÁRIA',GW/2,122);
   ctx.font='12px Fredoka,Arial,sans-serif';ctx.fillStyle='rgba(255,220,200,0.6)';ctx.fillText('Defenda o tecido posicionando células imunes — e construa memória imunológica a cada infecção vencida.',GW/2,142);
-  // Cell parade
+  // Cell parade (centralizada em telas mais largas)
+  ctx.save();ctx.translate((GW-800)/2,0);
   const t=Date.now()*0.001;
   const cells=[{x:100,y:220,r:12,u:UNITS.NEUTRO,nm:'Neutrófilo',o:0},{x:220,y:228,r:16,u:UNITS.MACRO,nm:'Macrófago',o:1},{x:340,y:218,r:13,u:UNITS.EOSINO,nm:'Eosinófilo',o:2},{x:460,y:226,r:10,u:UNITS.LINFOB,nm:'Linfócito B',o:3},{x:580,y:222,r:11,u:UNITS.TCITO,nm:'T CD8+',o:4},{x:700,y:228,r:12,u:UNITS.NK,nm:'NK',o:5}];
   for(const c of cells){const cx=c.x+Math.sin(t+c.o)*12,cy=c.y+Math.cos(t*1.3+c.o)*6;ctx.beginPath();ctx.arc(cx,cy,c.r+5,0,Math.PI*2);ctx.fillStyle='rgba('+hexToRGB(c.u.col)+',0.1)';ctx.fill();ctx.beginPath();ctx.arc(cx,cy,c.r,0,Math.PI*2);const cg=ctx.createRadialGradient(cx-2,cy-2,1,cx,cy,c.r);cg.addColorStop(0,c.u.lt);cg.addColorStop(1,c.u.dk);ctx.fillStyle=cg;ctx.fill();ctx.strokeStyle=c.u.dk;ctx.lineWidth=1;ctx.stroke();ctx.font='7px Fredoka,Arial';ctx.fillStyle='rgba(255,255,255,0.4)';ctx.fillText(c.nm,cx,cy+c.r+10);}
@@ -1013,6 +1023,7 @@ function drawMenu(){
   ctx.font='bold 10px Fredoka,Arial';ctx.fillStyle='rgba(255,100,100,0.4)';ctx.fillText('VS',GW/2,272);
   const edata=[{x:200,nm:'Bactéria',c:ENEMIES.BACTERIA,r:8},{x:330,nm:'Biofilme',c:ENEMIES.BIOFILME,r:14},{x:470,nm:'Helminto',c:ENEMIES.HELMINTO,r:14},{x:600,nm:'Entamoeba',c:ENEMIES.ENTAMOEBA,r:12}];
   for(let i=0;i<edata.length;i++){const ed=edata[i],ey=295+Math.sin(t*0.8+i*2)*5;ctx.beginPath();ctx.arc(ed.x,ey,ed.r,0,Math.PI*2);const eg=ctx.createRadialGradient(ed.x-2,ey-2,0,ed.x,ey,ed.r);eg.addColorStop(0,shadeColor(ed.c.col,40));eg.addColorStop(1,ed.c.dk);ctx.fillStyle=eg;ctx.fill();ctx.strokeStyle=ed.c.dk;ctx.lineWidth=1;ctx.stroke();ctx.font='7px Fredoka,Arial';ctx.fillStyle='rgba(255,200,200,0.4)';ctx.fillText(ed.nm,ed.x,ey+ed.r+10);}
+  ctx.restore();
   // Play button
   const bx=GW/2-90,by=345,bw=180,bh=50;ctx.save();ctx.shadowColor='rgba(100,220,140,0.4)';ctx.shadowBlur=20;const bg2=ctx.createLinearGradient(bx,by,bx,by+bh);bg2.addColorStop(0,'rgba(80,200,120,0.35)');bg2.addColorStop(1,'rgba(60,160,100,0.25)');ctx.fillStyle=bg2;ctx.beginPath();roundRect(ctx,bx,by,bw,bh,10);ctx.fill();ctx.restore();
   ctx.strokeStyle='rgba(100,220,140,0.6)';ctx.lineWidth=2;ctx.beginPath();roundRect(ctx,bx,by,bw,bh,10);ctx.stroke();ctx.font='bold 20px Fredoka,Arial,sans-serif';ctx.fillStyle='#AAFFCC';ctx.fillText('JOGAR',GW/2,by+bh/2);
@@ -1215,6 +1226,10 @@ function togglePause(){
 document.addEventListener('keydown',e=>{if(e.code==='Escape'||e.code==='KeyP'){if(PAUSE_CFG.pausable.includes(state)||state==='paused'){e.preventDefault();togglePause();}}});
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&PAUSE_CFG.pausable.includes(state))togglePause();});
 
+
+// Ao girar o celular fora de uma partida, recarrega para recalcular a largura do canvas
+window.addEventListener('orientationchange',()=>{setTimeout(()=>{const want=Math.round(Math.min(1100,Math.max(800,GH*window.innerWidth/Math.max(1,window.innerHeight))));
+  if(Math.abs(want-GW)>60&&!['playing','countdown','dying','paused'].includes(state))location.reload();},350);});
 </script>
 </body>
 </html>
