@@ -40,7 +40,7 @@
 <div id="ovl" class="hide" role="dialog" aria-modal="true" aria-label="Pausa"><div class="card" id="card"></div></div>
 <script>
 const canvas=document.getElementById('game'),ctx=canvas.getContext('2d');
-const GH=450,GW=Math.round(Math.min(1100,Math.max(800,GH*window.innerWidth/Math.max(1,window.innerHeight)))); // largura acompanha a proporção da telacanvas.width=GW;canvas.height=GH;
+const GH=450,GW=Math.round(Math.min(1100,Math.max(800,GH*window.innerWidth/Math.max(1,window.innerHeight)))); /* largura acompanha a proporção da tela */ canvas.width=GW;canvas.height=GH;
 function resizeCanvas(){const ar=GW/GH,vw=window.innerWidth,vh=window.innerHeight;let w,h;if(vw/vh>ar){h=vh;w=h*ar;}else{w=vw;h=w/ar;}canvas.style.width=w+'px';canvas.style.height=h+'px';canvas.style.margin=((vh-h)/2)+'px auto 0';}
 window.addEventListener('resize',resizeCanvas);resizeCanvas();
 const FPS=60,FT=1000/FPS;let lastTS=0,accum=0;
