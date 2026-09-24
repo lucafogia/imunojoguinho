@@ -159,9 +159,9 @@ const CHAR_CONFIG={
 // --- Modos de dificuldade (meta = sobreviver ao tempo) ---
 // divide = intervalo (s) entre divisões de cada bactéria; arrive = frames entre novas chegadas; maxLoad = carga que perde
 const MODES={
-  FACIL:  {key:'FACIL',  label:'Fácil',  secs:60,  divide:[13,20], arrive:280, maxLoad:34, hazardEvery:600, hazardMax:1, col:'#66DD88'},
-  MEDIO:  {key:'MEDIO',  label:'Médio',  secs:90,  divide:[9,15],  arrive:200, maxLoad:38, hazardEvery:420, hazardMax:2, col:'#FFC24D'},
-  DIFICIL:{key:'DIFICIL',label:'Difícil',secs:120, divide:[7,11],  arrive:150, maxLoad:42, hazardEvery:300, hazardMax:3, col:'#FF6B6B'},
+  FACIL:  {key:'FACIL',  label:'Fácil',  secs:60,  divide:[24,36], arrive:450, maxLoad:40, hazardEvery:700, hazardMax:1, col:'#66DD88'},
+  MEDIO:  {key:'MEDIO',  label:'Médio',  secs:90,  divide:[18,28], arrive:360, maxLoad:44, hazardEvery:480, hazardMax:2, col:'#FFC24D'},
+  DIFICIL:{key:'DIFICIL',label:'Difícil',secs:120, divide:[13,20], arrive:260, maxLoad:48, hazardEvery:360, hazardMax:2, col:'#FF6B6B'},
 };
 function rnd(r){return r[0]+Math.random()*(r[1]-r[0]);}
 // carga atual de infecção (M1/neutrófilo) ou degradação (M2)
@@ -178,7 +178,7 @@ let frame=0, gameOverTime=0;
 let mode='MEDIO', targetFrames=5400, elapsed=0;
 let factToast=null;   // {text,life} — curiosidade legível durante o jogo
 let mouseX=0, mouseY=0;
-let hazardSpawnCount=0;
+let hazardSpawnCount=0, overT=0;
 let highScore=parseInt(localStorage.getItem('fagocito_hs')||'0');
 let selectHover=-1; // which card is hovered in select screen
 
@@ -272,7 +272,7 @@ function getFacts(){
 }
 
 function init(){
-  frame=0; elapsed=0; factToast=null; hazardSpawnCount=0;
+  frame=0; elapsed=0; factToast=null; hazardSpawnCount=0; overT=0;
   targetFrames=MODES[mode].secs*60;
   const cfg=CHAR_CONFIG[charType];
   P={x:WORLD_W/2,y:WORLD_H/2,r:cfg.radius,baseR:cfg.radius,spd:cfg.speed,
@@ -379,9 +379,10 @@ function spreadTarget(t){ // necrose se espalha para o tecido vizinho
   targets.push(n);addP(t.x,t.y,'#884433',6,2);addText(t.x,t.y-t.r-8,'espalhou','#FF8888',10);sndDivide();
 }
 function surge(){ // protozoário derruba a defesa: a infecção/degradação dá um salto perto de você
-  if(charType==='M2'){for(let i=0;i<2;i++){const a=Math.random()*Math.PI*2;spreadTarget({x:P.x+Math.cos(a)*60,y:P.y+Math.sin(a)*60,r:14});}return;}
+  if(charType==='M2'){for(let i=0;i<2;i++){if(currentLoad()+2>MODES[mode].maxLoad-3)break;const a=Math.random()*Math.PI*2;spreadTarget({x:P.x+Math.cos(a)*60,y:P.y+Math.sin(a)*60,r:14});}return;}
   const e=P.eaten;const pool=e>=30?['COCCUS','BACILLUS','SPIRILLUM','CAPSULADO']:e>=15?['COCCUS','BACILLUS','SPIRILLUM']:e>=5?['COCCUS','BACILLUS']:['COCCUS'];
-  for(let i=0;i<3;i++){const type=pool[Math.floor(Math.random()*pool.length)];const a=Math.random()*Math.PI*2;
+  for(let i=0;i<2;i++){const type=pool[Math.floor(Math.random()*pool.length)];const a=Math.random()*Math.PI*2;
+    if(currentLoad()+TYPES[type].load>MODES[mode].maxLoad-3)break; // o surto assusta, mas não mata sozinho
     divideBact({x:P.x+Math.cos(a)*70,y:P.y+Math.sin(a)*70,type,cfg:TYPES[type],r:TYPES[type].r});}
 }
 
@@ -518,7 +519,8 @@ function update(){
     }
   }
 
-  if(currentLoad()>=MODES[mode].maxLoad){
+  if(currentLoad()>=MODES[mode].maxLoad){ overT++; if(overT%20===1) addText(P.x,P.y-P.r-24,(charType==='M2'?'DEGRADAÇÃO':'INFECÇÃO')+' CRÍTICA!','#FF4444',15); } else overT=0;
+  if(overT>=90){
     state='gameover'; gameOverTime=Date.now();
     if(P.eaten>highScore){highScore=P.eaten;localStorage.setItem('fagocito_hs',highScore+'');}
     sndDie(); return;
