@@ -189,9 +189,9 @@ const obsKeys = Object.keys(OBS_TYPES);
 
 // --- Modos de dificuldade (meta = sobreviver ao tempo) ---
 const MODES = {
-  FACIL:   {key:'FACIL',   label:'Fácil',   secs:60,  speedMul:0.85, gapMul:1.30, dangerEnd:0.62, hitDanger:0.10, col:'#66DD88'},
-  MEDIO:   {key:'MEDIO',   label:'Médio',   secs:90,  speedMul:1.00, gapMul:1.00, dangerEnd:0.74, hitDanger:0.12, col:'#FFC24D'},
-  DIFICIL: {key:'DIFICIL', label:'Difícil', secs:120, speedMul:1.20, gapMul:0.80, dangerEnd:0.85, hitDanger:0.15, col:'#FF6B6B'},
+  FACIL:   {key:'FACIL',   label:'Fácil',   secs:60,  speedMul:0.80, gapMul:1.45, dangerEnd:0.52, hitDanger:0.09, ramp:0.65, col:'#66DD88'},
+  MEDIO:   {key:'MEDIO',   label:'Médio',   secs:90,  speedMul:1.00, gapMul:1.00, dangerEnd:0.74, hitDanger:0.12, ramp:1.0, col:'#FFC24D'},
+  DIFICIL: {key:'DIFICIL', label:'Difícil', secs:120, speedMul:1.20, gapMul:0.80, dangerEnd:0.85, hitDanger:0.15, ramp:1.0, col:'#FF6B6B'},
 };
 const modeKeys = ['FACIL','MEDIO','DIFICIL'];
 
@@ -321,7 +321,7 @@ function update() {
   const progress = Math.min(1, elapsed/targetFrames);
 
   // Velocidade sobe suavemente ao longo da sessão (por modo)
-  speed = BASE_SPEED * M.speedMul * (1 + progress*1.0);
+  speed = BASE_SPEED * M.speedMul * (1 + progress*M.ramp); // ramp menor no Fácil: o fim não aperta tanto
 
   // Score = distância
   if (frame%3===0) { score++; if (score%100===0) sndScore(); }
@@ -376,7 +376,7 @@ function update() {
   }
 
   // --- Obstáculos (densidade por modo, aperta com o tempo) ---
-  const gap = Math.max(16, (46 - progress*22) * M.gapMul);
+  const gap = Math.max(16, (46 - progress*22*M.ramp) * M.gapMul);
   if (frame - lastObsFrame > gap + Math.random()*22) { spawnObs(); lastObsFrame=frame; }
 
   // Power-ups every ~600 frames after score 50
