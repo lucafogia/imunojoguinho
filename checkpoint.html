@@ -69,16 +69,16 @@ function sndLose(){tone(300,0.5,{type:'triangle',slide:70,vol:0.06});noiseBurst(
 // ===== Configuração =====
 const CX=400,CY=222,FIELD_R=200;
 const MODES={
-  FACIL:  {key:'FACIL',  label:'Fácil',  start:16,max:64,divide:[10,15],mut:0.7, col:'#66DD88',desc:'Tumor lento, muta pouco.'},
-  MEDIO:  {key:'MEDIO',  label:'Médio',  start:22,max:76,divide:[8,13], mut:1.0, col:'#FFC24D',desc:'Equilibrado.'},
-  DIFICIL:{key:'DIFICIL',label:'Difícil',start:28,max:88,divide:[6,10], mut:1.35,col:'#FF6B6B',desc:'Cresce rápido, muta muito.'},
+  FACIL:  {key:'FACIL',  label:'Fácil',  start:18,max:64,divide:[9,13], mut:0.8, col:'#66DD88',desc:'Tumor lento, muta pouco.'},
+  MEDIO:  {key:'MEDIO',  label:'Médio',  start:24,max:76,divide:[7,11], mut:1.1, col:'#FFC24D',desc:'Equilibrado.'},
+  DIFICIL:{key:'DIFICIL',label:'Difícil',start:30,max:88,divide:[5,8],  mut:1.5, col:'#FF6B6B',desc:'Cresce rápido, muta muito.'},
 };
 const modeKeys=['FACIL','MEDIO','DIFICIL'];
 const UNITS={
   T:  {key:'T',  name:'T CD8+',    cost:14,col:'#5CFF7A',spd:1.7,life:2100,killT:55,hot:'1',desc:'Mata células com MHC-I + antígeno. Encostar em PD-L1 a deixa EXAUSTA.'},
   NK: {key:'NK', name:'NK',        cost:16,col:'#FFE156',spd:1.6,life:2100,killT:60,hot:'2',desc:'Mata células SEM MHC-I ("missing self"). Ignora as que têm MHC-I.'},
   CAR:{key:'CAR',name:'CAR-T',     cost:32,col:'#FF7BFF',spd:1.8,life:1800,killT:40,hot:'3',desc:'Mata por antígeno de superfície, sem precisar de MHC. Cara — e o tumor pode perder o antígeno.'},
-  DC: {key:'DC', name:'Dendrítica',cost:18,col:'#FF9B3D',spd:0,  life:3600,killT:0, hot:'4',desc:'Fica parada. Perto de restos de células mortas, coleta antígeno e acelera o priming (sua renda).'},
+  DC: {key:'DC', name:'Dendrítica',cost:18,col:'#FF9B3D',spd:0,  life:3600,killT:0, hot:'4',desc:'Solte perto dos RESTOS de células mortas (pontos amarelos): ela coleta antígeno e gera PRIMING — os pontos para soltar efetores e usar terapias.'},
 };
 const unitKeys=['T','NK','CAR','DC'];
 const THERAPIES={
@@ -112,7 +112,7 @@ const LEGEND=[
 // ===== Estado =====
 let state='menu',mode='MEDIO',frame=0,elapsed=0;
 let tumor=[],immune=[],debris=[],particles=[],texts=[],rings=[];
-let points=40, baseIncome=0.045;
+let points=40, baseIncome=0.040;
 let selected='T', radioAiming=false;
 let active={},cooldowns={};
 let pressure={T:0,NK:0,CAR:0};
@@ -145,9 +145,9 @@ function divide(p){
   const t={mhc1:p.mhc1,pdl1:p.pdl1,ag:p.ag};
   const pT=Math.min(1,pressure.T),pNK=Math.min(1,pressure.NK),pC=Math.min(1,pressure.CAR);
   let mut=false;
-  if(t.mhc1&&Math.random()<(0.03+0.24*pT)*k){t.mhc1=false;mut=true;}
+  if(t.mhc1&&Math.random()<(0.04+0.26*pT)*k){t.mhc1=false;mut=true;}
   else if(!t.mhc1&&Math.random()<(0.03+0.30*pNK)*k){t.mhc1=true;mut=true;}
-  if(!t.pdl1&&Math.random()<(0.03+0.20*pT)*k){t.pdl1=true;mut=true;}
+  if(!t.pdl1&&Math.random()<(0.04+0.22*pT)*k){t.pdl1=true;mut=true;}
   if(t.ag&&Math.random()<(0.015+0.30*pC)*k){t.ag=false;mut=true;}
   const a=Math.random()*6.28;const nc=makeCell(p.x+Math.cos(a)*9,p.y+Math.sin(a)*9,t);
   tumor.push(nc);if(mut){stats.mutations++;nc.flash=24;sndMutate();}
@@ -292,6 +292,14 @@ function drawUnit(u){
     ctx.strokeStyle=cfg.col;ctx.lineWidth=2;for(let i=0;i<8;i++){const a=i/8*Math.PI*2+u.wob*0.3;const l=9+(act?Math.sin(u.wob*2+i)*3:0);ctx.beginPath();ctx.moveTo(Math.cos(a)*4,Math.sin(a)*4);ctx.lineTo(Math.cos(a)*(l+4),Math.sin(a)*(l+4));ctx.stroke();}
     ctx.beginPath();ctx.arc(0,0,6,0,Math.PI*2);ctx.fillStyle=cfg.col;ctx.fill();ctx.shadowBlur=0;
     ctx.fillStyle='rgba(60,20,0,0.5)';ctx.beginPath();ctx.arc(0,0,2.5,0,Math.PI*2);ctx.fill();
+    if(act){ // coleta de antígeno: fios dos restos até a dendrítica, com partícula viajando
+      ctx.save();ctx.globalCompositeOperation='lighter';
+      for(const d of debris){const dx=d.x-u.x,dy=d.y-u.y;if(Math.hypot(dx,dy)>=75)continue;
+        ctx.strokeStyle='rgba(255,155,61,0.35)';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(dx,dy);ctx.lineTo(0,0);ctx.stroke();
+        const t=(frame*0.02+d.x*0.01)%1;ctx.fillStyle='#FFE156';ctx.beginPath();ctx.arc(dx*(1-t),dy*(1-t),1.8,0,Math.PI*2);ctx.fill();}
+      ctx.restore();
+      ctx.font='700 8px '+FONT;ctx.textAlign='center';ctx.fillStyle='#FFB070';ctx.fillText('+PRIMING',0,-16);
+    }
     ctx.restore();return;
   }
   const ex=u.st==='exhausted';const col=ex?'#8A8F9C':cfg.col;
@@ -342,10 +350,14 @@ function drawHUD(){
   const nM=tumor.filter(c=>!c.mhc1).length,nP=tumor.filter(c=>c.pdl1).length,nA=tumor.filter(c=>!c.ag).length;
   ctx.fillText('-MHC '+nM+'  +PDL1 '+nP+'  -Ag '+nA,192,106);
   // PRIMING
-  pill(GW-202,44,190,34,10,'rgba(0,0,0,0.5)','rgba(255,255,255,0.12)');
+  const nDC=immune.filter(u=>u.type==='DC'&&u.st==='active').length;
+  const dcPulse=nDC>0?0.5+Math.sin(frame*0.15)*0.5:0;
+  pill(GW-202,44,190,34,10,'rgba(0,0,0,0.5)',nDC>0?`rgba(255,155,61,${0.35+dcPulse*0.5})`:'rgba(255,255,255,0.12)');
   ctx.font='9px '+MONO;ctx.textAlign='left';ctx.fillStyle='rgba(255,255,255,0.6)';ctx.fillText('PRIMING',GW-192,58);
   ctx.font='400 16px '+MONO;ctx.textAlign='right';ctx.fillStyle='#FFE156';ctx.fillText(Math.floor(points),GW-22,70);
-  ctx.font='9px '+MONO;ctx.textAlign='left';ctx.fillStyle='rgba(255,255,255,0.45)';ctx.fillText((active.CTLA>0?'×2 ':'')+'tempo '+Math.floor(elapsed/60)+'s',GW-192,72);
+  ctx.font='9px '+MONO;ctx.textAlign='left';
+  if(nDC>0){ctx.fillStyle='#FFB070';ctx.fillText((active.CTLA>0?'×2 · ':'')+'+renda ×'+nDC+' dendrítica'+(nDC>1?'s':''),GW-192,72);}
+  else{ctx.fillStyle='rgba(255,255,255,0.45)';ctx.fillText((active.CTLA>0?'×2 ':'')+'tempo '+Math.floor(elapsed/60)+'s',GW-192,72);}
   // terapias ativas (topo centro)
   let ax=GW/2-((Object.keys(active).filter(k=>active[k]>0).length)*46)/2;
   for(const k of therKeys){if(active[k]>0){const th=THERAPIES[k];pill(ax,12,42,20,6,'rgba(0,0,0,0.5)',th.col);ctx.font='9px '+MONO;ctx.textAlign='center';ctx.fillStyle=th.col;ctx.fillText(Math.ceil(active[k]/60)+'s',ax+21,26);ctx.fillStyle=th.col;ctx.fillRect(ax+3,ax>0?30:30,36*(active[k]/th.dur),2);ax+=46;}}
@@ -378,7 +390,7 @@ function drawHUD(){
 }
 let tipShown='';
 
-function modeRects(){const bw=170,bh=66,gap=18,total=3*bw+2*gap,x0=(GW-total)/2,y=GH-96;return modeKeys.map((k,i)=>({key:k,x:x0+i*(bw+gap),y,w:bw,h:bh}));}
+function modeRects(){const bw=196,bh=66,gap=14,total=3*bw+2*gap,x0=(GW-total)/2,y=GH-112;return modeKeys.map((k,i)=>({key:k,x:x0+i*(bw+gap),y,w:bw,h:bh}));}
 function drawTitle(y,size){
   ctx.font='700 '+size+'px '+FONT;ctx.textAlign='center';
   const g=ctx.createLinearGradient(GW/2-170,0,GW/2+170,0);g.addColorStop(0,'#37F0FF');g.addColorStop(0.5,'#FFFFFF');g.addColorStop(1,'#FF7BFF');
@@ -396,6 +408,7 @@ function drawMenu(){
   ctx.font='500 13px '+FONT;ctx.fillStyle='rgba(230,235,255,0.85)';
   ctx.fillText('O tumor cresce no centro do campo. Você o ataca de fora — mas cada clone que você mata',GW/2,GH*0.52);
   ctx.fillText('seleciona os sobreviventes. Ele evolui contra a sua estratégia. Combine, ou perca.',GW/2,GH*0.52+20);
+  ctx.fillText('Dendríticas coletam antígeno dos restos e geram PRIMING — sua renda para soltar mais células.',GW/2,GH*0.52+40);
   ctx.font='600 12px '+FONT;ctx.fillStyle='#FFE156';const mob='ontouchstart' in window;
   ctx.fillText(mob?'TOQUE para soltar células · botões embaixo para terapias':'CLIQUE no campo para soltar células · 1-4 escolhe · Q/W/E/R terapias',GW/2,GH*0.7);
   ctx.font='700 16px '+FONT;const bl=Math.sin(Date.now()*0.004)*0.5+0.5;ctx.fillStyle=`rgba(255,255,255,${0.5+bl*0.5})`;
@@ -410,12 +423,12 @@ function drawModeSelect(){
   const lx=250,lw=GW-270;let yy=78;
   for(const [col,txt] of LEGEND){ctx.fillStyle=col;ctx.beginPath();ctx.arc(lx+6,yy-4,5,0,Math.PI*2);ctx.fill();ctx.font='500 12px '+FONT;ctx.textAlign='left';ctx.fillStyle='#E6EAF5';const ls=wrapText(txt,lw-30);for(let j=0;j<ls.length;j++)ctx.fillText(ls[j],lx+20,yy+j*15);yy+=ls.length*15+12;}
   // efetores
-  const eff=[['T','verde: precisa de MHC-I + antígeno'],['NK','amarela: mata quem NÃO tem MHC-I'],['CAR','rosa: mata por antígeno, sem MHC'],['DC','laranja: renda perto de restos']];
+  const eff=[['T','verde: precisa de MHC-I + antígeno'],['NK','amarela: mata quem NÃO tem MHC-I'],['CAR','rosa: mata por antígeno, sem MHC'],['DC','restos → PRIMING (seus pontos)']];
   eff.forEach(([k,d],i)=>{const bx=60+i*185,by=258;drawUnit({type:k,x:bx,y:by,st:'seek',t:0,life:999,wob:Date.now()*0.003});ctx.font='500 10px '+FONT;ctx.textAlign='left';ctx.fillStyle=UNITS[k].col;ctx.fillText(UNITS[k].name,bx+14,by-2);ctx.fillStyle='rgba(230,235,255,0.75)';ctx.fillText(d,bx+14,by+11);});
-  ctx.font='500 12px '+FONT;ctx.textAlign='center';ctx.fillStyle='#CDBBEE';ctx.fillText('Vença eliminando todas as células. Perca se o tumor atingir o limite (escape / metástase).',GW/2,300);
+  ctx.font='500 12px '+FONT;ctx.textAlign='center';ctx.fillStyle='#CDBBEE';ctx.fillText('Vença eliminando todas as células. Perca se o tumor atingir o limite (escape / invasão do tecido).',GW/2,318);
   for(const r of modeRects()){const M=MODES[r.key];const hov=hitR(r,mouseX,mouseY);pill(r.x,r.y,r.w,r.h,12,hov?'rgba(255,255,255,0.1)':'rgba(255,255,255,0.04)',M.col);
     ctx.font='700 18px '+FONT;ctx.textAlign='center';ctx.fillStyle=M.col;ctx.fillText(M.label,r.x+r.w/2,r.y+26);
-    ctx.font='9px '+MONO;ctx.fillStyle='#FFF';ctx.fillText(M.start+' células · limite '+M.max,r.x+r.w/2,r.y+43);
+    ctx.font='8px '+MONO;ctx.fillStyle='#FFF';ctx.fillText(M.start+' células · limite '+M.max,r.x+r.w/2,r.y+43);
     ctx.font='500 9px '+FONT;ctx.fillStyle='rgba(220,210,235,0.6)';ctx.fillText(M.desc,r.x+r.w/2,r.y+58);}
   const mob='ontouchstart' in window;ctx.font='500 10px '+FONT;ctx.textAlign='center';ctx.fillStyle='rgba(200,180,220,0.55)';ctx.fillText(mob?'Toque em uma dificuldade':'Clique numa dificuldade · ou tecle 1 / 2 / 3',GW/2,GH-12);
 }
@@ -423,7 +436,7 @@ function drawEnd(won){
   ctx.fillStyle=won?'rgba(2,20,12,0.86)':'rgba(24,4,12,0.88)';ctx.fillRect(0,0,GW,GH);
   ctx.font='700 40px '+FONT;ctx.textAlign='center';ctx.save();ctx.shadowColor=won?'#5CFF7A':'#FF5C7A';ctx.shadowBlur=20;ctx.fillStyle=won?'#7DFF9A':'#FF7B95';ctx.fillText(won?'REMISSÃO!':'ESCAPE TUMORAL',GW/2,GH*0.14);ctx.restore();
   ctx.font='500 13px '+FONT;ctx.fillStyle=won?'#BFE8CC':'#F0C2CC';
-  ctx.fillText(won?'O sistema imune eliminou todos os clones antes que o tumor escapasse.':'O tumor selecionou clones resistentes e ultrapassou o limite — metástase.',GW/2,GH*0.14+30);
+  ctx.fillText(won?'O sistema imune eliminou todos os clones antes que o tumor escapasse.':'O tumor selecionou clones resistentes e ultrapassou o limite — invasão do tecido.',GW/2,GH*0.14+30);
   ctx.font='11px '+MONO;ctx.fillStyle='#FFF';
   ctx.fillText(MODES[mode].label+' · '+stats.killed+' eliminadas · '+stats.mutations+' mutações · pico '+stats.peak+' · '+Math.floor(elapsed/60)+'s',GW/2,GH*0.32);
   ctx.font='500 11px '+FONT;ctx.fillStyle='rgba(255,255,255,0.6)';ctx.fillText('T exaustas por PD-L1: '+stats.exhausted,GW/2,GH*0.32+20);
@@ -491,8 +504,9 @@ const PAUSE_BTN={x:GW-74,y:10,w:28,h:24};
 const PAUSE_CFG={pausable:['playing'],
  eyebrow:()=>'CHECKPOINT · '+MODES[mode].label.toUpperCase()+' · PAUSA',
  title:()=>'IMUNOEDIÇÃO · '+phase,
- lessons:()=>[['OBJETIVO','#5CFF7A','Elimine todas as células tumorais antes que o tumor atinja '+MODES[mode].max+' (escape / metástase). Agora: '+tumor.length+' células.'],
+ lessons:()=>[['OBJETIVO','#5CFF7A','Elimine todas as células tumorais antes que o tumor atinja '+MODES[mode].max+' (escape / invasão do tecido). Agora: '+tumor.length+' células.'],
   ['CONTROLES','#FFE156','Clique no campo solta a célula selecionada · 1–4 escolhe T, NK, CAR-T, dendrítica · Q/W/E/R terapias · Radio pede um clique de mira.'],
+  ['DENDRÍTICA','#FF9B3D','Ela não mata: solte-a perto dos restos de células mortas. Ela coleta antígeno e gera PRIMING (seus pontos). Sem ela, você fica sem pontos para novas células.'],
   ['LEITURA','#37F0FF','Anel CIANO = MHC-I (alvo das T). Halo MAGENTA = PD-L1 (exausta quem encosta). Pontos AMARELOS = antígeno (alvo da CAR-T). NK mata quem NÃO tem MHC-I.'],
   ['CONCEITO','#FF7BFF','Imunoedição: cada clone eliminado seleciona os sobreviventes. Monoterapia falha; combine efetores e checkpoints.']],
  restart:()=>init(), menu:()=>{state='menu';}};
